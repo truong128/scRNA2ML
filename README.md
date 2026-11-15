@@ -105,24 +105,6 @@ tail -f logs/run.log                     # live progress
 cat results/run_log.jsonl                # finished stages, durations, versions
 ```
 
-## Reproducing into a separate directory
-
-[`scripts/reproduce.sh`](scripts/reproduce.sh) runs the complete pipeline into a new directory, leaving the repository's `data/` and `results/` untouched. It writes a copy of the configuration with `data_dir` and `results_dir` pointing into that directory, then runs every stage.
-
-```bash
-scripts/reproduce.sh /path/to/rerun                                  # download everything again (~40 GB free needed)
-scripts/reproduce.sh /path/to/rerun --reuse-raw data/raw --compare results
-```
-
-| Option | Description |
-|---|---|
-| `--reuse-raw DIR` | Start from existing raw downloads. Files are cloned copy-on-write (APFS) or hard-linked, so `DIR` is never modified and little extra space is used (~25 GB free needed). The download stage still checks every file. |
-| `--compare RESULTS_DIR` | When the run finishes, compare `key_numbers.json` and every publication table with an earlier results directory. |
-| `--stages LIST` | Run a subset of stages. |
-| `--config FILE` | Study configuration to copy (default `config/nsclc.yaml`). |
-
-Set `PYTHON` to the interpreter of the environment if it is not the active `python`. After the download stage, raw files are verified against their SHA-256 manifests. Rerunning with the same directory resumes from the last checkpoint. The comparison can also be run on its own: `python scripts/compare_runs.py OLD_RESULTS NEW_RESULTS`.
-
 ## Running individual stages
 
 `--stages` accepts any comma-separated subset; stages always execute in pipeline order.
@@ -323,7 +305,6 @@ scRNA2ML/
 │   ├── explain.py                 out-of-cohort SHAP and association knowledge graph
 │   ├── report.py                  tables and figures
 │   └── graphical.py               graphical abstract
-├── scripts/                       reproduce.sh (rerun into a separate directory), compare_runs.py
 ├── docs/figures/                  images used in this README
 ├── environment.yml
 ├── pyproject.toml
