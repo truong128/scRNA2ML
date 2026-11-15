@@ -150,3 +150,20 @@ ml:
   permutation_schemes:
     immune: [loco, pooled]
     whole: [loco]
+
+# External validation: the final models, unchanged, applied to independent paired cohorts.
+# Cohorts were chosen from deposit metadata before scoring (config/external/screening.tsv).
+external:
+  threshold: 0.5
+  # Training deposit whose feature table carries Ensembl IDs; used to map renamed gene symbols back to the panel.
+  symbol_reference: E-MTAB-13526
+  screening: config/external/screening.tsv
+  cohorts:
+    GSE164789:
+      samples: config/external/GSE164789.tsv
+      normal: adjacent
+      citation: GEO GSE164789 (Zhang, Zhong et al.)
+    GSE310916:
+      samples: config/external/GSE310916.tsv
+      normal: distant
+      citation: Shin et al. 2026 Commun Biol

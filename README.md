@@ -47,7 +47,7 @@ The bundled configuration reproduces a six-cohort study of non-small cell lung c
 ## Pipeline overview
 
 ```
-download ─► prepare ─► seurat ─► features ─► ml ─► analysis ─► report
+download ─► prepare ─► seurat ─► features ─► ml ─► analysis ─► external ─► report
 ```
 
 | Stage | Module | What it does | Main outputs |
@@ -58,11 +58,12 @@ download ─► prepare ─► seurat ─► features ─► ml ─► analysis 
 | `features` | `features.py` | Builds paired donor × tissue matrices: log1p CPM over the shared gene panel plus cell-type proportions, for each analysis compartment. | `results/features/<compartment>/` |
 | `ml` | `ml.py`, `models.py`, `deep_models.py` | Nested evaluation of all models under every configured scheme, permutation tests, final interpretable model. | `results/ml/<compartment>/<scheme>/` |
 | `analysis` | `analysis.py`, `explain.py` | Paired random-effects meta-analysis, cohort (batch) predictability, feature-set ablation, subgroup performance, feature-selection stability, training-only gene-panel sensitivity analysis, technical-covariate negative control, out-of-cohort SHAP explanations, association knowledge graph. | `results/analysis/<compartment>/` |
+| `external` | `external.py` | Optional. Downloads the external cohorts declared under `external:`, maps renamed gene symbols to the panel through Ensembl IDs, runs the identical Seurat workflow, builds features with the locked panel and scores them with the frozen final models (hashes checked before and after; abstains on incomplete pairs, too few cells or incomplete panel coverage). | `results/external/` |
 | `report` | `report.py`, `graphical.py` | Main and supplementary tables (TSV + Excel), figures (PDF, PNG 300 dpi, editable SVG), graphical abstract and a machine-readable summary. | `results/publication/` |
 
 ## Installation
 
-Requirements: Linux or macOS, Python ≥ 3.10, R ≥ 4.3 with Seurat ≥ 5, `curl`.
+Requirements: Linux or macOS, Python ≥ 3.10, R ≥ 4.3 with Seurat ≥ 5 (the bundled results used Seurat 6.0.0), `curl`.
 
 **Conda (recommended — installs Python and R dependencies together)**
 
@@ -113,13 +114,14 @@ cat results/run_log.jsonl                # finished stages, durations, versions
 scrna2ml run --config config/nsclc.yaml --stages download,prepare
 scrna2ml run --config config/nsclc.yaml --stages seurat
 scrna2ml run --config config/nsclc.yaml --stages features,ml,analysis,report
+scrna2ml run --config config/nsclc.yaml --stages external,report # external validation of the frozen models
 scrna2ml run --config config/nsclc.yaml --stages report          # regenerate tables and figures only
 ```
 
 | Option | Default | Description |
 |---|---|---|
 | `--config` | — | Study YAML (relative paths resolve against the repository root). |
-| `--stages` | all | Subset of `download,prepare,seurat,features,ml,analysis,report`. |
+| `--stages` | all | Subset of `download,prepare,seurat,features,ml,analysis,external,report`. |
 | `--download-workers` | 8 | Concurrent downloads (per-host limits still apply). |
 
 ## Configuration
@@ -171,7 +173,19 @@ ml:
   permutation_schemes:
     immune: [loco, pooled]
     whole: [loco]
+
+external:                     # optional; cohorts never used for development
+  threshold: 0.5              # fixed decision threshold (probability > threshold = tumour)
+  symbol_reference: E-MTAB-13526   # feature annotation used to map renamed symbols via Ensembl IDs
+  screening: config/external/screening.tsv   # candidate cohorts with inclusion decisions
+  cohorts:
+    GSE164789:
+      samples: config/external/GSE164789.tsv # one row per library
+      normal: adjacent
+      citation: GEO GSE164789
 ```
+
+**External sample sheets** (`config/external/<cohort>.tsv`) have one row per library with columns `sample_id, donor, tissue, histology, chemistry, matrix, features, barcodes`. The last three are download URLs of the 10x count triplet, or `archive::<member>` for members of a series archive declared as `archive:` in the cohort entry.
 
 **Analysis compartments**
 
@@ -211,6 +225,8 @@ and tuned by `GridSearchCV` on balanced accuracy over the inner folds. **Nested 
 
 **Knowledge graph.** An association graph links features to a tumour node and to each other. Feature–tumour edges are weighted by the paired standardised effect (data-only layer) or by its average with scaled out-of-cohort SHAP and LOCO selection frequency (integrated layer). Feature–feature edges join features whose within-donor paired differences co-vary within cohorts (|ρ| ≥ 0.5, FDR < 0.01). Nodes are ranked by a composite pathway score (PageRank, personalised PageRank, path proximity, direct-edge weight, betweenness), and each gene is annotated with the cell-type proportion it tracks, which separates composition-linked from state-linked genes. Edges are associations, not causal relations.
 
+**External validation.** The final models (refitted on all development donors) are frozen and applied unchanged to the cohorts under `external:`. No retraining, recalibration, threshold tuning or cohort centring is done. The stage refuses to run if an external cohort is also a development cohort or if the compartments' gene panels differ. Metrics are computed per cohort and pooled, with donor-bootstrap CIs and a one-sided exact sign test of tumour scoring above the donor's own normal specimen.
+
 ## Outputs
 
 ```
@@ -226,9 +242,10 @@ results/
 │                                   fold_local_panel_{loco,oof}.tsv, fold_local_panel_summary.json,
 │                                   technical_control_loco.json, shap_loco_*.tsv.gz, shap_loco_summary.tsv,
 │                                   shap_loco_checks.json, knowledge_graph_{nodes,edges}.tsv, knowledge_graph_summary.json
+├── external/                       libraries.tsv, symbol_mapping.tsv, seurat/, predictions.tsv, metrics.tsv, checks.json
 ├── publication/
-│   ├── tables/                     Table1–3, S1–S15 (TSV) and tables.xlsx
-│   ├── figures/                    Figure1–5, S1–S4 as PDF, PNG (300 dpi) and SVG (editable text)
+│   ├── tables/                     Table1–4, S1–S18 (TSV) and tables.xlsx
+│   ├── figures/                    Figure1–6, S1–S4 as PDF, PNG (300 dpi) and SVG (editable text)
 │   └── key_numbers.json            every headline number, for programmatic manuscript checks
 └── run_log.jsonl                   stage timings, software versions, config/code SHA-256 and git commit
 ```
@@ -245,6 +262,9 @@ results/
 | `S12` | Technical-covariate negative control |
 | `S13` | Out-of-cohort SHAP summary (logistic and extra trees) |
 | `S14` – `S15` | Knowledge-graph nodes (scores and components) and edges |
+| `Table4_external_validation` | Frozen-model performance per external cohort and pooled (written when the `external` stage has run) |
+| `S16` – `S18` | External per-specimen predictions, cohort screening decisions, gene-symbol mapping |
+| `Figure6_external_validation` | Paired external scores, confusion matrices per cohort, and comparison with leave-one-cohort-out performance |
 
 Figures use Times New Roman throughout; SVGs keep text as editable `<text>` elements and PDFs embed TrueType fonts.
 
@@ -281,13 +301,14 @@ Reduce `qc.workers` or `ml.n_jobs` on smaller machines; all stages resume from c
 - Seurat checkpoints are keyed to a hash of the QC parameters, so changing a threshold reprocesses every library.
 - `splits.json` records the donors in every outer and inner fold; `errors.json` records any failed fit with its traceback.
 - `results/run_log.jsonl` records, for every stage, the SHA-256 of the configuration file and of the package source, and the git commit (suffixed `-dirty` if the working tree had uncommitted changes).
-- To apply a trained model to a new cohort, lock the gene panel (the `gene::` columns of `results/features/<compartment>/X.tsv.gz`, which `final_model.joblib` expects), the CPM denominator and the coverage rule before examining the new data.
+- To apply a trained model to a new cohort, lock the gene panel (the `gene::` columns of `results/features/<compartment>/X.tsv.gz`, which `final_model.joblib` expects), the CPM denominator and the coverage rule before examining the new data. The `external` stage does exactly this and records the SHA-256 of each frozen model in `results/external/checks.json`.
 
 ## Repository layout
 
 ```
 scRNA2ML/
 ├── config/nsclc.yaml              study configuration
+├── config/external/               external-cohort sample sheets and screening table
 ├── scrna2ml/
 │   ├── __main__.py                command-line interface and stage runner
 │   ├── config.py                  configuration loading
@@ -303,6 +324,7 @@ scRNA2ML/
 │   ├── ml.py                      nested validation, permutation tests, final model
 │   ├── analysis.py                meta-analysis, batch diagnostics, ablation, subgroups, stability, sensitivity controls
 │   ├── explain.py                 out-of-cohort SHAP and association knowledge graph
+│   ├── external.py                frozen-model external validation
 │   ├── report.py                  tables and figures
 │   └── graphical.py               graphical abstract
 ├── docs/figures/                  images used in this README

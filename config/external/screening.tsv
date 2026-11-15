@@ -1,0 +1,13 @@
+accession	study	decision	reason
+GSE164789	Precursor lung adenocarcinoma scRNA-seq (Zhang, Zhong et al.)	included	Per-sample 10x count matrices; 15 treatment-naive invasive adenocarcinomas with matched adjacent lung (AIS, MIA and TCR libraries not used)
+GSE310916	Shin et al. 2026, Commun Biol	included	Per-sample 10x count matrices; 4 treatment-naive NSCLC with matched distant normal lung (scRNA-seq libraries only; snRNA-seq and integrated objects not used)
+GSE119911	NSCLC scRNA-seq	excluded	Several libraries pool tumour and adjacent normal tissue, so tissue labels are not separable per library
+GSE97168	Lavin et al. 2017, Cell	excluded	Lineage-sorted MARS-seq (myeloid) with a merged UMI table; no unsorted 10x libraries per sample
+GSE189357	Zhu et al., lung adenocarcinoma AIS to IAC atlas	excluded	Tumour lesions only; no matched non-tumour lung
+GSE153935	Lung cancer fibroblast niches	excluded	Merged stromal-cell table only; no per-sample count matrices
+GSE253013	NOTCH3 in lung adenocarcinoma stroma	excluded	Integrated R object only; no per-sample count matrices
+GSE241468	Lung cancer susceptibility single-cell multiome	excluded	Non-tumour lung only
+E-MTAB-6149	Lambrechts et al. 2018, Nat Med	excluded	FASTQ files only; no deposited count matrices
+E-MTAB-6653	Lambrechts et al. 2018, Nat Med	excluded	FASTQ files only; no deposited count matrices
+GSE189502	SETBP1 and CSF3R myeloproliferative neoplasm	excluded	Not lung tissue
+E-MTAB-8602	Fission yeast osmotic stress	excluded	Not human lung tissue

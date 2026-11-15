@@ -13,6 +13,7 @@ from scipy.stats import gaussian_kde, spearmanr
 from sklearn.metrics import confusion_matrix, roc_curve
 
 from . import graphical
+from .config import REPO
 
 CITATION = {'GSE117570': 'Song et al. 2019', 'GSE131907': 'Kim et al. 2020', 'GSE154826': 'Leader et al. 2021',
             'GSE123902': 'Laughney et al. 2020', 'GSE198099': 'GEO GSE198099', 'E-MTAB-13526': 'De Zuani et al. 2024'}
@@ -164,6 +165,11 @@ def write_tables(R, out):
         tables[f'S13_{comp}_shap_loco'] = R.analysis(comp, 'shap_loco_summary.tsv')
         tables[f'S14_{comp}_knowledge_graph_nodes'] = R.analysis(comp, 'knowledge_graph_nodes.tsv')
         tables[f'S15_{comp}_knowledge_graph_edges'] = R.analysis(comp, 'knowledge_graph_edges.tsv')
+    if external_frames(R) is not None:
+        tables['Table4_external_validation'] = table_external(R)
+        tables['S16_external_predictions'] = external_frames(R)[0]
+        tables['S17_external_screening'] = pd.read_csv(REPO / R.cfg['external']['screening'], sep='\t')
+        tables['S18_external_symbol_mapping'] = pd.read_csv(R.root / 'external' / 'symbol_mapping.tsv', sep='\t')
     for name, t in tables.items():
         t.to_csv(out / f'{name}.tsv', sep='\t', index=False)
     with pd.ExcelWriter(out / 'tables.xlsx') as xl:
@@ -745,6 +751,144 @@ def table_evidence(R, comp='immune', n=15):
     return pd.DataFrame(rows)
 
 
+EXTERNAL = 'All external'
+MIN_DONORS_CI = 5
+
+
+def external_frames(R):
+    d = R.root / 'external'
+    if not (d / 'metrics.tsv').exists():
+        return None
+    return pd.read_csv(d / 'predictions.tsv', sep='\t'), pd.read_csv(d / 'metrics.tsv', sep='\t')
+
+
+def table_external(R):
+    pred, m = external_frames(R)
+    spec = R.cfg['external']['cohorts']
+    info = pred.groupby('cohort').agg(chem=('chemistry', lambda s: '; '.join(sorted(s.unique()))),
+                                      hist=('histology', lambda s: '; '.join(sorted(s.unique()))))
+    rows = []
+    for r in m.itertuples():
+        pooled = r.cohort == EXTERNAL
+        ci = r.donors_scored >= MIN_DONORS_CI
+        fmt = fmt_ci if ci else (lambda v, lo, hi: f'{v:.2f}')
+        rows.append({'Compartment': r.compartment, 'Cohort': r.cohort, 'Reference': '' if pooled else spec[r.cohort]['citation'],
+                     'Histology': '' if pooled else info.loc[r.cohort, 'hist'], 'Chemistry': '' if pooled else info.loc[r.cohort, 'chem'],
+                     'Non-tumour lung': '' if pooled else spec[r.cohort]['normal'], 'Donors': int(r.donors_scored),
+                     'Balanced accuracy (95% CI)': fmt(r.balanced_accuracy, r.balanced_accuracy_ci_low, r.balanced_accuracy_ci_high),
+                     'AUROC (95% CI)': fmt(r.auroc, r.auroc_ci_low, r.auroc_ci_high), 'Sensitivity': f'{r.sensitivity_tumor:.2f}',
+                     'Specificity': f'{r.specificity_tumor:.2f}', 'Brier score': f'{r.brier:.3f}',
+                     'Tumour > own normal': f'{int(r.pairs_tumour_higher)}/{int(r.donors_scored)}', 'Sign test P': f'{r.sign_test_p:.2g}',
+                     'TN/FP/FN/TP': f'{int(r.tn)}/{int(r.fp)}/{int(r.fn)}/{int(r.tp)}'})
+    return pd.DataFrame(rows)
+
+
+def external_pairs_panel(R, ax, comp, threshold):
+    pred, m = external_frames(R)
+    p = pred[(pred.compartment == comp) & (pred.status == 'scored')]
+    cohorts = m[(m.compartment == comp) & (m.cohort != EXTERNAL)].sort_values('donors_scored', ascending=False).cohort.tolist()
+    for i, c in enumerate(cohorts):
+        w = p[p.cohort == c].pivot(index='donor_id', columns='tissue', values='score')
+        x0, x1 = 3 * i, 3 * i + 1
+        for _, s in w.iterrows():
+            ax.plot([x0, x1], [s.Normal, s.Tumor], color='#2C3E50' if s.Tumor > s.Normal else '#E67E22', lw=.7, alpha=.75, zorder=1)
+        for x, t in ((x0, 'Normal'), (x1, 'Tumor')):
+            ok = (w[t] > threshold) == (t == 'Tumor')
+            ax.scatter(np.full(len(w), x), w[t], s=22, color=np.where(ok, TISSUE[t], 'white'), edgecolor=TISSUE[t], lw=1, zorder=3)
+        r = m[(m.compartment == comp) & (m.cohort == c)].iloc[0]
+        ax.text(x0 + .5, 1.13, f'{c}\n{int(r.donors_scored)} donors', ha='center', va='bottom', fontsize=8.5, fontweight='bold')
+        ax.text(x0 + .5, -.12, f'BA {r.balanced_accuracy:.2f}\nAUROC {r.auroc:.2f}\nT > N {int(r.pairs_tumour_higher)}/{int(r.donors_scored)}',
+                ha='center', va='top', fontsize=8.5)
+    ax.axhline(threshold, ls='--', color='grey', lw=.6, zorder=0)
+    ax.set_xticks([x for i in range(len(cohorts)) for x in (3 * i, 3 * i + 1)], ['N', 'T'] * len(cohorts))
+    for tick, t in zip(ax.get_xticklabels(), ['Normal', 'Tumor'] * len(cohorts)):
+        tick.set_color(TISSUE[t])
+        tick.set_fontweight('bold')
+    ax.set_xlim(-.6, 3 * len(cohorts) - 1.4)
+    ax.set_ylim(-.03, 1.03)
+    ax.set_ylabel('Tumour probability, frozen final model')
+    ax.set_title(f'{comp.capitalize()} model', pad=50, fontsize=11, fontweight='bold')
+
+
+def external_confusion_panel(R, ax, comp, cohort):
+    pred, _ = external_frames(R)
+    p = pred[(pred.compartment == comp) & (pred.cohort == cohort) & (pred.status == 'scored')]
+    cm = confusion_matrix(p.tissue, p.prediction, labels=['Normal', 'Tumor'])
+    frac = cm / cm.sum(axis=1, keepdims=True)
+    ax.imshow(frac, cmap='Blues', vmin=0, vmax=1)
+    for i in range(2):
+        for k in range(2):
+            ax.text(k, i, f'{cm[i, k]}\n({frac[i, k]:.0%})', ha='center', va='center', fontsize=8.5,
+                    color='white' if frac[i, k] > .5 else 'black')
+    ax.set_xticks([0, 1], ['Normal', 'Tumour'])
+    ax.set_yticks([0, 1], ['Normal', 'Tumour'])
+    ax.tick_params(length=0)
+    for s in ax.spines.values():
+        s.set_visible(False)
+    ax.set(xlabel='Predicted', ylabel='True')
+    ax.set_title(f'{comp.capitalize()} model, {cohort}', fontsize=9)
+
+
+def external_forest_panel(R, ax):
+    _, m = external_frames(R)
+    rows = []
+    for comp in R.cfg['features']['compartments']:
+        loco = R.metrics(comp, 'loco').set_index('model').loc['logistic_regression']
+        rows.append((comp, 'Leave-one-cohort-out (training cohorts)', loco, int(loco.n_donors)))
+        mc = m[m.compartment == comp]
+        order = mc[mc.cohort != EXTERNAL].sort_values('donors_scored', ascending=False).cohort.tolist() + [EXTERNAL]
+        rows += [(comp, f'{c} (external)' if c != EXTERNAL else 'All external cohorts', mc[mc.cohort == c].iloc[0], None) for c in order]
+    y = np.arange(len(rows))[::-1].astype(float)
+    for comp_i, comp in enumerate(R.cfg['features']['compartments']):
+        idx = [i for i, r in enumerate(rows) if r[0] == comp]
+        if comp_i % 2 == 0:
+            ax.axhspan(y[idx].min() - .5, y[idx].max() + .5, color='#F2F2F2', zorder=0)
+    labels = []
+    for yi, (comp, name, r, n) in zip(y, rows):
+        donors = int(r.n_donors) if n is not None else int(r.donors_scored)
+        for metric, off, mk, col in (('balanced_accuracy', .14, 'o', '#2C3E50'), ('auroc', -.14, 'D', '#8E44AD')):
+            err = [[r[metric] - r[f'{metric}_ci_low']], [r[f'{metric}_ci_high'] - r[metric]]] if donors >= MIN_DONORS_CI else None
+            ax.errorbar(r[metric], yi + off, xerr=err, fmt=mk, color=col, ms=4.5, lw=1, capsize=2, zorder=3)
+        labels.append(f'{comp.capitalize()}: {name}, n = {donors}')
+    ax.axvline(.5, ls=':', color='grey', lw=.6)
+    ax.set_yticks(y, labels)
+    ax.set_xlim(.3, 1.02)
+    ax.set_xlabel(f'Estimate (95% donor-bootstrap CI; not shown for n < {MIN_DONORS_CI})')
+    ax.legend([Line2D([], [], marker='o', color='#2C3E50', ls=''), Line2D([], [], marker='D', color='#8E44AD', ls='')],
+              ['Balanced accuracy (threshold 0.5)', 'AUROC'], frameon=False, loc='lower center', bbox_to_anchor=(.5, 1.0), ncol=2)
+
+
+def fig_external(R, out):
+    threshold = float(R.cfg['external']['threshold'])
+    fig = plt.figure(figsize=(200 * MM, 245 * MM))
+    top = fig.add_gridspec(1, 2, left=.09, right=.98, top=.9, bottom=.635, wspace=.3)
+    for j, comp in enumerate(R.cfg['features']['compartments']):
+        ax = fig.add_subplot(top[0, j])
+        external_pairs_panel(R, ax, comp, threshold)
+        panel(ax, 'ab'[j])
+    pred, _ = external_frames(R)
+    wide = pred[pred.status == 'scored'].pivot_table(index=['compartment', 'donor_id'], columns='tissue', values='score')
+    handles = [Line2D([], [], marker='o', color=TISSUE['Normal'], ls='', label='Non-tumour lung'),
+               Line2D([], [], marker='o', color=TISSUE['Tumor'], ls='', label='Tumour'),
+               Line2D([], [], marker='o', mfc='white', mec='#555555', ls='', label='Misclassified at 0.5'),
+               Line2D([], [], color='#2C3E50', label='Tumour scored higher than own non-tumour')]
+    if (wide.Tumor <= wide.Normal).any():
+        handles.append(Line2D([], [], color='#E67E22', label='Tumour scored lower'))
+    fig.legend(handles=handles, loc='center', bbox_to_anchor=(.535, .535), ncol=len(handles), frameon=False, fontsize=8.5,
+               handletextpad=.3, columnspacing=1.2)
+    _, m = external_frames(R)
+    cohorts = m[m.cohort != EXTERNAL].sort_values('donors_scored', ascending=False).cohort.unique().tolist()
+    comps = R.cfg['features']['compartments']
+    cms = fig.add_gridspec(1, len(comps) * len(cohorts), left=.09, right=.98, top=.47, bottom=.35, wspace=.75)
+    for j, (comp, cohort) in enumerate((c, k) for c in comps for k in cohorts):
+        external_confusion_panel(R, fig.add_subplot(cms[0, j]), comp, cohort)
+    ax = fig.add_subplot(fig.add_gridspec(1, 1, left=.4, right=.98, top=.25, bottom=.04)[0, 0])
+    external_forest_panel(R, ax)
+    for letter, x, y in (('c', .01, .49), ('d', .52, .49), ('e', .01, .27)):
+        fig.text(x, y, letter, fontsize=14, fontweight='bold', va='bottom', ha='left')
+    save(fig, out / 'Figure6_external_validation')
+
+
 def run(cfg):
     style()
     R = Results(cfg)
@@ -761,6 +905,8 @@ def run(cfg):
     fig_explain(R, figs)
     fig_calibration(R, figs)
     fig_kg_supplement(R, figs)
+    if external_frames(R) is not None:
+        fig_external(R, figs)
     summary = numbers(R)
     (out / 'key_numbers.json').write_text(json.dumps(summary, indent=2, default=float))
     return tables, summary
@@ -821,4 +967,11 @@ def numbers(R):
         p = oof[oof.model == 'logistic_regression']
         s[comp]['loco_brier_logistic'] = float(((p.score - p.truth) ** 2).mean())
         s[comp]['final_model_top_features'] = pd.read_csv(R.root / 'ml' / comp / 'final_model_coefficients.tsv', sep='\t').head(20).to_dict('records')
+    if external_frames(R) is not None:
+        pred, m = external_frames(R)
+        s['external'] = {'checks': json.loads((R.root / 'external' / 'checks.json').read_text()),
+                         'libraries': int(pred.libraries.str.split('|').explode().nunique()),
+                         'renamed_symbols': int(pd.read_csv(R.root / 'external' / 'symbol_mapping.tsv', sep='\t').panel_symbol.nunique())}
+        for r in m.to_dict('records'):
+            s['external'].setdefault(r.pop('compartment'), {})[r.pop('cohort')] = {k: v for k, v in r.items() if pd.notna(v)}
     return s

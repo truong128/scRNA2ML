@@ -13,7 +13,7 @@ import pandas as pd
 from . import __version__
 from .config import load_config
 
-STAGES = ['download', 'prepare', 'seurat', 'features', 'ml', 'analysis', 'report']
+STAGES = ['download', 'prepare', 'seurat', 'features', 'ml', 'analysis', 'external', 'report']
 
 
 def stage_download(cfg, args):
@@ -72,6 +72,11 @@ def stage_analysis(cfg, args):
         analysis.technical_control(cfg, comp)
         explain.shap_loco(cfg, comp)
         explain.knowledge_graph(cfg, comp)
+
+
+def stage_external(cfg, args):
+    from . import external
+    external.run(cfg)
 
 
 def stage_report(cfg, args):
