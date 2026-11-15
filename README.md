@@ -67,7 +67,7 @@ Requirements: Linux or macOS, Python ≥ 3.10, R ≥ 4.3 with Seurat ≥ 5, `cur
 **Conda (recommended — installs Python and R dependencies together)**
 
 ```bash
-git clone https://github.com/<your-username>/scRNA2ML.git
+git clone https://github.com/truong128/scRNA2ML.git
 cd scRNA2ML
 conda env create -f environment.yml
 conda activate scrna2ml
