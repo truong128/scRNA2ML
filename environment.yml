@@ -1,0 +1,27 @@
+name: scrna2ml
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - numpy=1.26.4
+  - scipy=1.15
+  - pandas=2.1.4
+  - scikit-learn=1.5.2
+  - joblib
+  - matplotlib
+  - pyyaml
+  - openpyxl
+  - xgboost
+  - lightgbm
+  - catboost
+  - pytorch
+  - curl
+  - r-base>=4.3
+  - r-seurat>=5
+  - r-matrix
+  - r-data.table
+  - r-jsonlite
+  - pip
+  - pip:
+      - -e .

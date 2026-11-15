@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "scRNA2ML: from public single-cell RNA-seq archives to cross-cohort validated donor-level classifiers"
+version: 1.0.0
+date-released: 2026-11-15
+license: MIT
+repository-code: "https://github.com/<your-username>/scRNA2ML"
+authors:
+  - family-names: "<Family name>"
+    given-names: "<Given names>"
+keywords:
+  - single-cell RNA-seq
+  - machine learning
+  - nested cross-validation
+  - leave-one-cohort-out
+  - pseudobulk
+  - non-small cell lung cancer

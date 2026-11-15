@@ -1,0 +1,12 @@
+data/
+results/
+logs/
+!docs/figures/
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.DS_Store
+*.rds
+*.joblib
+catboost_info/

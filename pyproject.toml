@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scrna2ml"
+version = "1.0.0"
+description = "End-to-end, leakage-safe pipeline from public scRNA-seq to cross-cohort validated donor-level classifiers"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26,<2",
+  "scipy>=1.11",
+  "pandas>=2.1,<2.3",
+  "scikit-learn==1.5.2",
+  "joblib>=1.2",
+  "matplotlib>=3.8",
+  "pyyaml>=6",
+  "openpyxl>=3.1",
+  "xgboost>=2.0",
+  "lightgbm>=4.0",
+  "catboost>=1.2",
+  "torch>=2.1",
+]
+
+[project.scripts]
+scrna2ml = "scrna2ml.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["scrna2ml*"]
+
+[tool.setuptools.package-data]
+scrna2ml = ["R/*.R"]

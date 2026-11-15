@@ -1,0 +1,74 @@
+# scRNA2ML configuration: NSCLC tumour vs matched adjacent normal lung
+study:
+  name: NSCLC_tumour_vs_adjacent_normal
+  data_dir: data
+  results_dir: results
+  seed: 42
+
+datasets:
+  GSE117570:
+    source: geo
+    files:
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE117nnn/GSE117570/suppl/GSE117570_RAW.tar
+    citation: Song et al. 2019 Cancer Med
+  GSE131907:
+    source: geo
+    files:
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE131nnn/GSE131907/suppl/GSE131907_Lung_Cancer_raw_UMI_matrix.rds.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE131nnn/GSE131907/suppl/GSE131907_Lung_Cancer_cell_annotation.txt.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE131nnn/GSE131907/suppl/GSE131907_Lung_Cancer_Feature_Summary.xlsx
+    citation: Kim et al. 2020 Nat Commun
+  GSE154826:
+    source: geo_listing
+    listing: https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/
+    pattern: 'GSE154826_[A-Za-z0-9_]+\.(?:tar\.gz|csv\.gz)'
+    citation: Leader et al. 2021 Cancer Cell
+  GSE123902:
+    source: geo
+    files:
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE123nnn/GSE123902/suppl/GSE123902_RAW.tar
+    citation: Laughney et al. 2020 Nat Med
+  GSE198099:
+    source: geo
+    files:
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE198nnn/GSE198099/suppl/GSE198099_RAW.tar
+    citation: GSE198099 (GEO)
+  E-MTAB-13526:
+    source: biostudies_listing
+    listing: https://ftp.ebi.ac.uk/biostudies/fire/E-MTAB-/526/E-MTAB-13526/Files/
+    # Patient libraries only; D* libraries are deceased healthy donors without matched tumour.
+    pattern: '(?:P[0-9]+_[BT][0-9]+-(?:matrix\.mtx|barcodes\.tsv|features\.tsv)\.gz|E-MTAB-13526\.(?:sdrf|idf)\.txt)'
+    citation: De Zuani et al. 2024 Nat Commun
+
+# Per-library Seurat QC and broad annotation parameters
+qc:
+  min_counts: 500
+  min_features: 200
+  max_percent_mt: 25
+  min_cells_per_sample: 30
+  variable_features: 2000
+  pca_dimensions: 30
+  cluster_resolution: 0.4
+  celltype_min_cells: 20
+  workers: 4
+
+features:
+  # A donor is kept only if both tissues retain at least this many cells in the compartment.
+  min_cells: 50
+  compartments: [immune, whole]
+
+ml:
+  select_k: [5, 10, 20, 50]
+  outer_max_splits: 5
+  inner_max_splits: 3
+  bootstrap: 1000
+  permutations: 200
+  n_jobs: 8
+  # Within-cohort CV only for cohorts with at least this many donors.
+  within_min_donors: 8
+  schemes:
+    immune: [loco, loco_centered, pooled, within]
+    whole: [loco, pooled]
+  permutation_schemes:
+    immune: [loco, pooled]
+    whole: [loco]
