@@ -3,7 +3,7 @@
 Unit of analysis: one tumour and one adjacent-normal specimen per donor (paired design).
 Within a donor both tissues must come from the same cell fraction (CD45+-enriched preferred for the
 immune compartment, otherwise unsorted); libraries of that fraction are summed. Features are
-log1p CPM over genes shared by every cohort plus cell-type proportions. No labels are used here
+log1p CPM over genes listed by every input library plus cell-type proportions. No labels are used here
 except to assert pairing.
 """
 import json
@@ -68,18 +68,14 @@ def build(cfg, compartment):
     if units.empty:
         raise ValueError(f'No paired units for compartment {compartment}')
     # Genes absent from a deposited input matrix (author gene filtering, e.g. GSE117570) are unmeasured, not zero,
-    # so only genes present in the input of every library used are kept. Seurat renames '_' to '-'.
+    # so only genes listed in the input of every library used are kept. The panel uses gene lists only (no expression
+    # values, no labels); analysis.fold_local_panel re-derives it from training cohorts alone. Seurat renames '_' to '-'.
     used = set('|'.join(units.libraries).split('|'))
     measured = None
     for path in qc.loc[qc.library_id.isin(used), 'path']:
         g = set(pd.read_csv(Path(path) / 'genes.tsv.gz', header=None)[0].astype(str).str.replace('_', '-'))
         measured = g if measured is None else measured & g
-    shared = None
-    for cohort in units.cohort.unique():
-        idx = np.flatnonzero(units.cohort.to_numpy() == cohort)
-        genes = set().union(*(counts[i].index for i in idx))
-        shared = genes if shared is None else shared & genes
-    shared = sorted(shared & measured)
+    shared = sorted(measured)
     mat = pd.DataFrame([c.reindex(shared, fill_value=0).to_numpy() for c in counts], columns=shared)
     logcpm = np.log1p(mat.div(mat.sum(axis=1), axis=0) * 1e6)
     logcpm.columns = ['gene::' + g for g in shared]
@@ -97,7 +93,7 @@ def build(cfg, compartment):
     pd.DataFrame(log, columns=['donor_id', 'compartment', 'reason']).to_csv(out / 'unit_exclusions.tsv', sep='\t', index=False)
     (out / 'schema.json').write_text(json.dumps({
         'unit': 'donor x tissue; tumour and adjacent normal from the same donor and cell fraction',
-        'expression': 'log1p(1e6 * summed raw pseudobulk count / sum over genes measured in every library and detected in every cohort)',
+        'expression': 'log1p(1e6 * summed raw pseudobulk count / sum over genes listed in the input of every library used)',
         'measured_in_all_input_libraries': len(measured),
         'proportions': f'fixed provisional marker labels within the {compartment} compartment',
         'shared_genes': len(shared), 'units': len(units), 'donors': int(units.donor_id.nunique()),

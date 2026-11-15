@@ -4,7 +4,7 @@
 
 `scRNA2ML` downloads raw count matrices from GEO / ArrayExpress, harmonises heterogeneous deposits into one library manifest, runs an identical Seurat quality-control and annotation workflow on every library, aggregates cells into donor-level pseudobulk profiles and evaluates 36 classifier families under nested, leakage-safe validation schemes, including leave-one-cohort-out. It finishes by writing publication-ready tables and figures.
 
-The bundled configuration reproduces a six-cohort study of non-small cell lung cancer (NSCLC) tumour versus matched adjacent normal lung. The framework itself is disease-agnostic: new studies are a YAML file plus, where needed, one adapter function.
+The bundled configuration reproduces a six-cohort study of non-small cell lung cancer (NSCLC) tumour versus matched non-tumour (adjacent) lung. The framework itself is disease-agnostic: new studies are a YAML file plus, where needed, one adapter function.
 
 <p align="center">
   <img src="docs/figures/graphical_abstract.png" alt="scRNA2ML graphical abstract" width="100%">
@@ -38,11 +38,11 @@ The bundled configuration reproduces a six-cohort study of non-small cell lung c
 | **The donor is the unit of analysis** | Cells are never classified individually. Each donor contributes one tumour and one adjacent-normal pseudobulk profile, and both always fall in the same cross-validation partition (asserted for every outer and inner split). |
 | **No information leakage** | Imputation, variance filtering, univariate feature selection, scaling and model fitting all live inside a scikit-learn `Pipeline` that is refitted on training partitions only. Hyper-parameters and the algorithm itself are chosen by an inner loop that never sees the outer test set. |
 | **Generalisation across studies, not just across donors** | The primary scheme holds out an entire cohort; inner tuning also holds out cohorts. |
-| **Prespecified primary model** | An L2-regularised logistic regression is declared in advance; a 36-model benchmark and nested algorithm selection are reported alongside it rather than replacing it. |
+| **Fixed primary model** | An L2-regularised logistic regression is designated as primary in code (`ml.PRIMARY`); a 36-model benchmark and nested algorithm selection are reported alongside it rather than replacing it. |
 | **Identical processing for every library** | One R script, one parameter set, applied per library with checkpointing; every exclusion is logged with a reason. |
-| **Comparable features across platforms** | Genes are kept only if they were measured in the deposited input of every library *and* detected in every cohort, so author-side gene filtering is treated as missing, not as zero expression. |
+| **Comparable features across platforms** | Genes are kept only if they are listed in the deposited input of every library, so author-side gene filtering is treated as missing, not as zero expression. The rule uses gene lists only (never expression values or labels), and a sensitivity analysis rebuilds the panel and CPM denominator from the training cohorts of each held-out fold. |
 | **Honest uncertainty** | Donor-level bootstrap confidence intervals, within-donor label-permutation tests that rerun the full nested procedure, and explicit batch-effect diagnostics. |
-| **Resumable and auditable** | Downloads are size- and gzip-verified with SHA-256 manifests; every stage writes completion markers, and a JSON run log records timings and software versions. |
+| **Resumable and auditable** | Downloads are size- and gzip-verified with SHA-256 manifests; every stage writes completion markers, and a JSON run log records timings, software versions, SHA-256 hashes of the configuration and code, and the git commit. |
 
 ## Pipeline overview
 
@@ -57,7 +57,7 @@ download ─► prepare ─► seurat ─► features ─► ml ─► analysis 
 | `seurat` | `seurat.py`, `R/seurat_qc.R` | Per-library QC (UMI, gene and mitochondrial thresholds), normalisation, PCA, clustering, UMAP, marker-based broad annotation; exports whole-library and immune-compartment pseudobulk plus cell-type composition. | `results/seurat/<library>/`, `qc_audit.tsv` |
 | `features` | `features.py` | Builds paired donor × tissue matrices: log1p CPM over the shared gene panel plus cell-type proportions, for each analysis compartment. | `results/features/<compartment>/` |
 | `ml` | `ml.py`, `models.py`, `deep_models.py` | Nested evaluation of all models under every configured scheme, permutation tests, final interpretable model. | `results/ml/<compartment>/<scheme>/` |
-| `analysis` | `analysis.py` | Paired random-effects meta-analysis, cohort (batch) predictability, feature-set ablation, subgroup performance, feature-selection stability. | `results/analysis/<compartment>/` |
+| `analysis` | `analysis.py` | Paired random-effects meta-analysis, cohort (batch) predictability, feature-set ablation, subgroup performance, feature-selection stability, training-only gene-panel sensitivity analysis, technical-covariate negative control. | `results/analysis/<compartment>/` |
 | `report` | `report.py`, `graphical.py` | Main and supplementary tables (TSV + Excel), figures (PDF, PNG 300 dpi, editable SVG), graphical abstract and a machine-readable summary. | `results/publication/` |
 
 ## Installation
@@ -175,8 +175,8 @@ ml:
 
 **Analysis compartments**
 
-- `immune` — pseudobulk of cells annotated as T, NK, B, plasma, myeloid, dendritic or mast cells, plus immune cell-type proportions. Per donor, CD45⁺-sorted libraries are preferred, otherwise unsorted libraries; tumour and normal must come from the same fraction.
-- `whole` — pseudobulk of all QC-passing cells from unsorted libraries only, plus all cell-type proportions.
+- `immune` — pseudobulk of cells annotated as T, NK, B, plasma, myeloid, dendritic or mast cells, plus immune cell-type proportions. Per donor, CD45⁺-sorted libraries are preferred, otherwise non-CD45-selected libraries (unsorted or erythrocyte-depleted only; `enrichment: unsorted` in the manifest); tumour and normal must come from the same fraction.
+- `whole` — pseudobulk of all QC-passing cells from non-CD45-selected libraries only, plus all cell-type proportions.
 
 ## Validation design
 
@@ -201,7 +201,11 @@ and tuned by `GridSearchCV` on balanced accuracy over the inner folds. **Nested 
 
 **Permutation test.** Tumour/normal labels are swapped at random within donors, and the complete nested procedure for the primary model is rerun for each permutation; *P* = (1 + #null ≥ observed) / (1 + *n*).
 
-**Secondary analyses.** DerSimonian–Laird random-effects meta-analysis of within-donor paired differences per cohort (Benjamini–Hochberg FDR, cross-cohort sign concordance, *I*²); cohort-of-origin predictability as a batch-effect diagnostic; ablation (proportions only / genes only / all features / each single proportion); subgroup performance by histology, sorting fraction and cohort; selection frequency of each feature across outer folds; a final model refitted on all cohorts for interpretation.
+**Secondary analyses.** DerSimonian–Laird random-effects meta-analysis of within-donor paired differences per cohort with at least three donors (Benjamini–Hochberg FDR, sign concordance across the meta-analysed cohorts, *I*²; gene effects are differences on the log₂(1 + CPM) scale, not fold changes); cohort-of-origin predictability as a batch-effect diagnostic; ablation (proportions only / genes only / all features / each single proportion); subgroup performance by histology, sorting fraction and cohort; selection frequency of each feature across outer folds; a final model refitted on all cohorts for interpretation.
+
+**Gene-panel sensitivity analysis.** In each leave-one-cohort-out fold the gene panel and CPM denominator are rebuilt from the training cohorts only. The held-out cohort is represented over the panel genes its own assay lists (CPM renormalised over them) and abstains if any selected gene is missing. Results are reported for all scored donors and for cohorts with full panel coverage, alongside the original predictions for the same donors.
+
+**Technical-covariate negative control.** The primary model is run under leave-one-cohort-out on library-quality summaries only (median genes, UMIs and mitochondrial percentage per cell, fraction of unannotated cells; optionally cell and library counts) to measure how much tissue information is carried by sample quality alone.
 
 ## Outputs
 
@@ -214,12 +218,14 @@ results/
 │                                   permutation_null.tsv, permutation_test.json
 ├── ml/<compartment>/               final_model.joblib, final_model_coefficients.tsv
 ├── analysis/<compartment>/         paired_meta_analysis.tsv, cohort_predictability.json, feature_set_ablation_loco.tsv,
-│                                   subgroups_loco.tsv, selection_stability_loco.tsv
+│                                   subgroups_loco.tsv, selection_stability_loco.tsv,
+│                                   fold_local_panel_{loco,oof}.tsv, fold_local_panel_summary.json,
+│                                   technical_control_loco.json
 ├── publication/
-│   ├── tables/                     Table1–2, S1–S10 (TSV) and tables.xlsx
+│   ├── tables/                     Table1–2, S1–S12 (TSV) and tables.xlsx
 │   ├── figures/                    Figure1–4, S1–S2 as PDF, PNG (300 dpi) and SVG (editable text)
 │   └── key_numbers.json            every headline number, for programmatic manuscript checks
-└── run_log.jsonl                   stage timings and software versions
+└── run_log.jsonl                   stage timings, software versions, config/code SHA-256 and git commit
 ```
 
 | File | Content |
@@ -229,6 +235,8 @@ results/
 | `S1` – `S4` | Library exclusions, per-library QC, analysed units, unit exclusions |
 | `S5` | All models for every scheme |
 | `S6` – `S10` | Meta-analysis, ablation, subgroups, selection stability, final-model coefficients |
+| `S11` | Leave-one-cohort-out performance with a training-only gene panel, per held-out cohort (coverage, abstention) |
+| `S12` | Technical-covariate negative control |
 
 Figures use Times New Roman throughout; SVGs keep text as editable `<text>` elements and PDFs embed TrueType fonts.
 
@@ -264,6 +272,8 @@ Reduce `qc.workers` or `ml.n_jobs` on smaller machines; all stages resume from c
 - SHA-256 checksums of every downloaded file in `data/raw/<cohort>/download_manifest.json`.
 - Seurat checkpoints are keyed to a hash of the QC parameters, so changing a threshold reprocesses every library.
 - `splits.json` records the donors in every outer and inner fold; `errors.json` records any failed fit with its traceback.
+- `results/run_log.jsonl` records, for every stage, the SHA-256 of the configuration file and of the package source, and the git commit (suffixed `-dirty` if the working tree had uncommitted changes).
+- To apply a trained model to a new cohort, lock the gene panel (the `gene::` columns of `results/features/<compartment>/X.tsv.gz`, which `final_model.joblib` expects), the CPM denominator and the coverage rule before examining the new data.
 
 ## Repository layout
 
@@ -283,7 +293,7 @@ scRNA2ML/
 │   ├── deep_models.py             scikit-learn wrapper for tabular neural networks
 │   ├── tabular_architectures.py   FT-Transformer, ResNet and MLP definitions
 │   ├── ml.py                      nested validation, permutation tests, final model
-│   ├── analysis.py                meta-analysis, batch diagnostics, ablation, subgroups, stability
+│   ├── analysis.py                meta-analysis, batch diagnostics, ablation, subgroups, stability, sensitivity controls
 │   ├── report.py                  tables and figures
 │   └── graphical.py               graphical abstract
 ├── docs/figures/                  images used in this README

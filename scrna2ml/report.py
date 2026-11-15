@@ -19,6 +19,12 @@ PALETTE = ['#0072B2', '#E69F00', '#009E73', '#CC79A7', '#56B4E9', '#D55E00', '#F
 TISSUE = {'Normal': '#4C9F70', 'Tumor': '#C0392B'}
 SCHEME_LABEL = {'loco': 'Leave-one-cohort-out', 'loco_centered': 'LOCO, cohort-centred', 'pooled': 'Pooled donor CV'}
 MM = 1 / 25.4
+# 'unsorted' covers unsorted digests and CD235a-depleted (erythrocyte-depleted) E-MTAB-13526 libraries.
+FRACTION_LABEL = {'unsorted': 'non-CD45-selected'}
+
+
+def fraction_label(x):
+    return FRACTION_LABEL.get(x, x)
 
 
 def style():
@@ -96,7 +102,7 @@ def table_cohorts(R):
     for cohort in libs.cohort.unique():
         q = qc[qc.cohort == cohort]
         row = {'Cohort': cohort, 'Reference': CITATION.get(cohort, ''), 'Chemistry': '; '.join(sorted(q.chemistry.astype(str).unique())),
-               'Cell fractions': '; '.join(sorted(q.enrichment.unique())), 'Libraries (eligible)': len(q),
+               'Cell fractions': '; '.join(sorted(fraction_label(f) for f in q.enrichment.unique())), 'Libraries (eligible)': len(q),
                'Libraries passing QC': int((q.status == 'complete').sum()), 'Cells passing QC': int(q.retained_cells.fillna(0).sum())}
         for comp in R.cfg['features']['compartments']:
             u = R.units(comp)
@@ -104,7 +110,7 @@ def table_cohorts(R):
             row[f'Paired donors ({comp})'] = len(u)
             if comp == 'immune':
                 row['Histology (immune donors)'] = ', '.join(f'{k} {v}' for k, v in u.histology.value_counts().items())
-                row['Fraction used (immune donors)'] = ', '.join(f'{k} {v}' for k, v in u.enrichment.value_counts().items())
+                row['Fraction used (immune donors)'] = ', '.join(f'{fraction_label(k)} {v}' for k, v in u.enrichment.value_counts().items())
         rows.append(row)
     t = pd.DataFrame(rows)
     total = {'Cohort': 'Total', 'Libraries (eligible)': t['Libraries (eligible)'].sum(), 'Libraries passing QC': t['Libraries passing QC'].sum(),
@@ -124,7 +130,7 @@ def table_performance(R):
                 if model not in m.index or not m.loc[model, 'complete_oof']:
                     continue
                 r = m.loc[model]
-                rows.append({'Compartment': comp, 'Validation': scheme_label(scheme), 'Model': 'Logistic regression (prespecified)' if model == 'logistic_regression' else f'Nested algorithm selection ({n_candidates(R, comp, scheme)} candidates)',
+                rows.append({'Compartment': comp, 'Validation': scheme_label(scheme), 'Model': 'Logistic regression (primary)' if model == 'logistic_regression' else f'Nested algorithm selection ({n_candidates(R, comp, scheme)} candidates)',
                              'Donors': int(r.n_donors), 'Balanced accuracy (95% CI)': fmt_ci(r.balanced_accuracy, r.balanced_accuracy_ci_low, r.balanced_accuracy_ci_high),
                              'AUROC (95% CI)': fmt_ci(r.get('auroc'), r.get('auroc_ci_low'), r.get('auroc_ci_high')) if model == 'logistic_regression' else 'NA',
                              'Mean per-fold AUROC': f"{r['auroc_mean_over_folds']:.2f}" if pd.notna(r.get('auroc_mean_over_folds')) else 'NA',
@@ -151,6 +157,9 @@ def write_tables(R, out):
         tables[f'S8_{comp}_subgroups'] = R.analysis(comp, 'subgroups_loco.tsv')
         tables[f'S9_{comp}_stability'] = R.analysis(comp, 'selection_stability_loco.tsv')
         tables[f'S10_{comp}_final_coef'] = pd.read_csv(R.root / 'ml' / comp / 'final_model_coefficients.tsv', sep='\t')
+        tables[f'S11_{comp}_training_only_panel'] = R.analysis(comp, 'fold_local_panel_loco.tsv')
+        tech = json.loads((R.root / 'analysis' / comp / 'technical_control_loco.json').read_text())
+        tables[f'S12_{comp}_technical_control'] = pd.DataFrame([{'feature_set': k, 'features': ', '.join(v.pop('features')), **v} for k, v in tech.items()])
     for name, t in tables.items():
         t.to_csv(out / f'{name}.tsv', sep='\t', index=False)
     with pd.ExcelWriter(out / 'tables.xlsx') as xl:
@@ -172,7 +181,7 @@ def fig_data(R, out, comp='immune'):
     fig = plt.figure(figsize=(210 * MM, 190 * MM))
     gs = fig.add_gridspec(2, 3, hspace=0.62, wspace=0.62)
     ax = fig.add_subplot(gs[0, 0])
-    d = units.drop_duplicates('donor_id').groupby(['cohort', 'enrichment']).size().unstack(fill_value=0).reindex(cohorts)
+    d = units.drop_duplicates('donor_id').groupby(['cohort', 'enrichment']).size().unstack(fill_value=0).reindex(cohorts).rename(columns=fraction_label)
     left = np.zeros(len(d))
     for i, col in enumerate(d.columns):
         ax.barh(d.index, d[col], left=left, color=['#555555', '#BBBBBB', '#888888'][i % 3], label=col, height=0.7)
@@ -180,7 +189,7 @@ def fig_data(R, out, comp='immune'):
     for i, v in enumerate(left):
         ax.text(v + 0.4, i, str(int(v)), va='center', fontsize=9)
     ax.set_xlabel('Paired donors')
-    ax.legend(frameon=False, ncol=2, loc='lower center', bbox_to_anchor=(0.5, 1.0), handlelength=1)
+    ax.legend(frameon=False, ncol=1, loc='lower right', handlelength=1)
     ax.invert_yaxis()
     panel(ax, 'a')
     ax = fig.add_subplot(gs[0, 1])
@@ -202,8 +211,10 @@ def fig_data(R, out, comp='immune'):
             ax.scatter(np.full(len(s), i) + (j - .5) * .3, s, s=7, color=colors[c], marker=mk, lw=0, alpha=.85)
     ax.set_xticks(range(len(cohorts)), cohorts, rotation=45, ha='right')
     ax.set_ylabel('Immune fraction of QC cells')
-    ax.set_ylim(0, 1.02)
-    ax.legend([Line2D([], [], marker='o', ls='', color='grey', ms=4), Line2D([], [], marker='^', ls='', color='grey', ms=4)], ['CD45+', 'unsorted'], frameon=False, loc='lower center', bbox_to_anchor=(0.5, 1.0), ncol=2, handletextpad=0.3)
+    ax.set_ylim(-0.3, 1.02)
+    ax.set_yticks(np.linspace(0, 1, 6))
+    ax.spines['left'].set_bounds(0, 1)
+    ax.legend([Line2D([], [], marker='o', ls='', color='grey', ms=4), Line2D([], [], marker='^', ls='', color='grey', ms=4)], ['CD45+', fraction_label('unsorted')], frameon=False, loc='lower center', ncol=1, handletextpad=0.3)
     panel(ax, 'c')
     ax = fig.add_subplot(gs[1, 0:2])
     props = [c for c in X if c.startswith('prop::')]
@@ -283,7 +294,7 @@ def fig_performance(R, out, comp='immune'):
     r = m.set_index('model').loc['logistic_regression']
     ax.plot(fpr, tpr, color='k', lw=1.6, label=f"Pooled AUROC {r.auroc:.2f}")
     ax.plot([0, 1], [0, 1], ls='--', color='grey', lw=.5)
-    ax.set(xlabel='1 − specificity', ylabel='Sensitivity', title='Prespecified logistic model, LOCO')
+    ax.set(xlabel='1 − specificity', ylabel='Sensitivity', title='Primary logistic model, LOCO')
     ax.legend(frameon=False, fontsize=8, loc='lower right')
     ax.set_aspect('equal')
     panel(ax, 'b')
@@ -305,7 +316,7 @@ def fig_performance(R, out, comp='immune'):
     ax.set_xlim(0.3, 1.02)
     ax.invert_yaxis()
     ax.set_xlabel('Balanced accuracy (95% donor-bootstrap CI)')
-    ax.legend([Line2D([], [], marker='o', color='#C0392B', ls=''), Line2D([], [], marker='s', color='#2C3E50', ls='')], ['Logistic (prespecified)', f"Nested selection ({n_candidates(R, comp, 'loco')} candidates)"], frameon=False, loc='upper left', fontsize=8.5)
+    ax.legend([Line2D([], [], marker='o', color='#C0392B', ls=''), Line2D([], [], marker='s', color='#2C3E50', ls='')], ['Logistic (primary)', f"Nested selection ({n_candidates(R, comp, 'loco')} candidates)"], frameon=False, loc='upper left', fontsize=8.5)
     panel(ax, 'c')
     ax = fig.add_subplot(gs[1, 1])
     ablation_panel(R, ax, comp)
@@ -369,26 +380,26 @@ def fig_biology(R, out, comp='immune'):
     gs = fig.add_gridspec(2, 2, hspace=0.4, wspace=0.6)
     ax = fig.add_subplot(gs[0, 0])
     sig = (genes.fdr < .05) & (genes.cohorts_up.eq(genes.cohorts) | genes.cohorts_down.eq(genes.cohorts))
-    ax.scatter(genes.log2_fold_change, -np.log10(genes.p), s=2, color='#BBBBBB', lw=0, rasterized=True)
-    ax.scatter(genes.log2_fold_change[sig], -np.log10(genes.p[sig]), s=3, c=np.where(genes.log2_fold_change[sig] > 0, '#C0392B', '#2E86C1'), lw=0)
+    ax.scatter(genes.log2_paired_difference, -np.log10(genes.p), s=2, color='#BBBBBB', lw=0, rasterized=True)
+    ax.scatter(genes.log2_paired_difference[sig], -np.log10(genes.p[sig]), s=3, c=np.where(genes.log2_paired_difference[sig] > 0, '#C0392B', '#2E86C1'), lw=0)
     lab = genes[sig].assign(score=lambda d: -np.log10(d.p)).sort_values('score', ascending=False)
-    lab = pd.concat([lab[lab.log2_fold_change > 0].head(5), lab[lab.log2_fold_change < 0].head(5)])
-    ax.set(xlabel='Pooled paired log2 fold change (tumour/normal)', ylabel='−log10 P (random effects)')
+    lab = pd.concat([lab[lab.log2_paired_difference > 0].head(5), lab[lab.log2_paired_difference < 0].head(5)])
+    ax.set(xlabel='Pooled paired difference, log$_2$(1 + CPM) (tumour − normal)', ylabel='−log$_{10}$ P (random effects)')
     ymax = (-np.log10(genes.p)).max() * 1.08
     ax.set_ylim(-ymax * .03, ymax)
     gap = ymax * .068
-    for up, d in ((True, lab[lab.log2_fold_change > 0]), (False, lab[lab.log2_fold_change < 0])):
+    for up, d in ((True, lab[lab.log2_paired_difference > 0]), (False, lab[lab.log2_paired_difference < 0])):
         d = d.sort_values('score', ascending=False)
         ys = list(-np.log10(d.p))
         for i in range(1, len(ys)):
             ys[i] = min(ys[i], ys[i - 1] - gap)
-        x = d.log2_fold_change.max() + 0.9 if up else d.log2_fold_change.min() - 0.9
+        x = d.log2_paired_difference.max() + 0.9 if up else d.log2_paired_difference.min() - 0.9
         for (_, r), y in zip(d.iterrows(), ys):
-            ax.annotate(r.feature.split('::')[1], (r.log2_fold_change, -np.log10(r.p)), xytext=(x, y), fontsize=8, va='center',
+            ax.annotate(r.feature.split('::')[1], (r.log2_paired_difference, -np.log10(r.p)), xytext=(x, y), fontsize=8, va='center',
                         ha='left' if up else 'right', arrowprops=dict(arrowstyle='-', lw=.4, color='#555555', shrinkA=1, shrinkB=1.5))
     lo, hi = ax.get_xlim()
-    ax.set_xlim(min(lo, lab.log2_fold_change.min() - 2.4), hi)
-    ax.text(0.99, 0.99, f'{int(sig.sum())} genes FDR<0.05 and\nconcordant in all cohorts', transform=ax.transAxes, va='top', ha='right', fontsize=8.5)
+    ax.set_xlim(min(lo, lab.log2_paired_difference.min() - 2.4), hi)
+    ax.text(0.99, 0.99, f'{int(sig.sum())} genes FDR < 0.05 and concordant\nin all {int(genes.cohorts.max())} cohorts with ≥3 donors', transform=ax.transAxes, va='top', ha='right', fontsize=8.5)
     panel(ax, 'a')
     ax = fig.add_subplot(gs[0, 1])
     top = genes[sig].sort_values('p').head(25).feature.tolist() or genes.sort_values('p').head(25).feature.tolist()
@@ -397,7 +408,7 @@ def fig_biology(R, out, comp='immune'):
     im = ax.imshow(hm.to_numpy(), cmap='RdBu_r', vmin=-lim, vmax=lim, aspect='auto')
     ax.set_yticks(range(len(top)), [t.split('::')[1] for t in top], fontsize=8)
     ax.set_xticks(range(hm.shape[1]), hm.columns, rotation=45, ha='right')
-    fig.colorbar(im, ax=ax, fraction=0.05, pad=0.03, label='Paired log2 FC')
+    fig.colorbar(im, ax=ax, fraction=0.05, pad=0.03, label='Paired difference, log$_2$(1 + CPM)')
     ax.spines[:].set_visible(False)
     panel(ax, 'b')
     ax = fig.add_subplot(gs[1, 0])
@@ -452,7 +463,7 @@ def fig_supplement(R, out):
     j = a.join(b, lsuffix='_loco', rsuffix='_pooled', how='inner')
     j = j[j.complete_oof_loco.astype(bool) & j.complete_oof_pooled.astype(bool)]
     ax.scatter(j.balanced_accuracy_pooled, j.balanced_accuracy_loco, s=8, color='#2C3E50')
-    offsets = {'logistic_regression': ((-30, -48), 'right', 'logistic (prespecified)'), 'nested_algorithm_selection': ((-12, 14), 'right', 'nested selection'),
+    offsets = {'logistic_regression': ((-30, -48), 'right', 'logistic (primary)'), 'nested_algorithm_selection': ((-12, 14), 'right', 'nested selection'),
                'dummy_prior': ((10, 16), 'left', 'dummy prior'), 'svm_poly': ((6, -16), 'left', 'svm poly')}
     for name, (xy, ha, label) in offsets.items():
         if name in j.index:
@@ -480,7 +491,7 @@ def fig_subgroups(R, out, comp='immune'):
     sg = R.analysis(comp, 'subgroups_loco.tsv')
     sg = sg[sg.model == 'logistic_regression']
     fig, ax = plt.subplots(figsize=(150 * MM, 115 * MM))
-    labels = [f'{r.variable}: {r.level} (n={r.n_donors})' for r in sg.itertuples()]
+    labels = [f'{r.variable}: {fraction_label(r.level)} (n={r.n_donors})' for r in sg.itertuples()]
     ax.barh(labels, sg.balanced_accuracy, color='#7F8C8D', label='Balanced accuracy')
     if 'auroc' in sg:
         ax.scatter(sg.auroc, range(len(sg)), color='#C0392B', s=10, zorder=3, label='AUROC')
@@ -488,7 +499,7 @@ def fig_subgroups(R, out, comp='immune'):
     ax.invert_yaxis()
     ax.set_xlim(0, 1.02)
     ax.legend(frameon=False, loc='lower center', bbox_to_anchor=(0.5, 1.0), ncol=2)
-    ax.set_xlabel('Leave-one-cohort-out performance (prespecified logistic)')
+    ax.set_xlabel('Leave-one-cohort-out performance (primary logistic)')
     save(fig, out / 'FigureS2_subgroups')
 
 
@@ -543,10 +554,13 @@ def numbers(R):
         meta = R.analysis(comp, 'paired_meta_analysis.tsv')
         g = meta[meta.type == 'gene']
         conc = g.cohorts_up.eq(g.cohorts) | g.cohorts_down.eq(g.cohorts)
+        s[comp]['meta_cohorts'] = int(g.cohorts.max())
         s[comp]['meta_genes_tested'] = int(len(g))
         s[comp]['meta_genes_fdr05'] = int((g.fdr < .05).sum())
         s[comp]['meta_genes_fdr05_concordant'] = int(((g.fdr < .05) & conc).sum())
         s[comp]['meta_proportions'] = meta[meta.type == 'proportion'][['feature', 'pooled_difference', 'se', 'p', 'fdr', 'I2', 'cohorts_up', 'cohorts_down', 'cohorts']].to_dict('records')
         s[comp]['cohort_predictability'] = json.loads((R.root / 'analysis' / comp / 'cohort_predictability.json').read_text())
+        s[comp]['training_only_panel'] = json.loads((R.root / 'analysis' / comp / 'fold_local_panel_summary.json').read_text())
+        s[comp]['technical_control'] = json.loads((R.root / 'analysis' / comp / 'technical_control_loco.json').read_text())
         s[comp]['final_model_top_features'] = pd.read_csv(R.root / 'ml' / comp / 'final_model_coefficients.tsv', sep='\t').head(20).to_dict('records')
     return s

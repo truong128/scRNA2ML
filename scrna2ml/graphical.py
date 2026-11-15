@@ -72,7 +72,7 @@ def draw(R, path):
         yb = Y + 0.205 - k * 0.042
         ax.add_patch(Circle((x0 + 0.06, yb), 0.009, color=col))
         ax.text(x0 + 0.075, yb, lab, fontsize=10.5, va='center', color=INK)
-    _lines(ax, x0, Y + 0.085, ['Same donor, same fraction', "(CD45+ or unsorted), 10x 3'"], size=10.5, gap=0.042)
+    _lines(ax, x0, Y + 0.085, ['Same donor, same fraction', '(CD45+ or non-CD45-selected)'], size=10.5, gap=0.042)
 
     # 2 QC + annotation
     x0 = XS[1]
@@ -102,7 +102,7 @@ def draw(R, path):
         s.set_visible(False)
     hax.set_ylabel('genes', fontsize=10, labelpad=3)
     _lines(ax, x0, Y + 0.30, ['Immune pseudobulk', '+ cell proportions'], size=12.5, color=INK, weight='bold')
-    _lines(ax, x0, Y + 0.17, [f"log-CPM, {sch['shared_genes']:,} shared genes", 'harmonises CD45+ and', 'unsorted libraries'], size=10.5, gap=0.045)
+    _lines(ax, x0, Y + 0.17, [f"log-CPM over {sch['shared_genes']:,} genes", 'listed by every assay', '(expression-blind panel)'], size=10.5, gap=0.045)
 
     # 4 validation
     x0 = XS[3]

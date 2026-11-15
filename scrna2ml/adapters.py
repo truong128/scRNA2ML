@@ -147,6 +147,8 @@ def gse198099(raw, out):
 
 
 # --------------------------------------------------------------------------- E-MTAB-13526
+# CD235a- libraries are erythrocyte-depleted but not lineage-selected; they share the 'unsorted' token
+# (reported as "non-CD45-selected") with unsorted digests from other cohorts.
 EMTAB_FRACTION = {'CD45+': 'CD45+', 'CD235a-': 'unsorted', 'MDSC': 'MDSC', 'CD45+ + MDSC': 'CD45+MDSC'}
 
 

@@ -1,7 +1,9 @@
 """End-to-end pipeline: python -m scrna2ml run --config config/nsclc.yaml [--stages download,prepare,...]"""
 import argparse
+import hashlib
 import json
 import platform
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -66,6 +68,8 @@ def stage_analysis(cfg, args):
         analysis.feature_set_ablation(cfg, comp, 'loco')
         analysis.subgroups(cfg, comp, 'loco')
         analysis.stability(cfg, comp, 'loco')
+        analysis.fold_local_panel(cfg, comp)
+        analysis.technical_control(cfg, comp)
 
 
 def stage_report(cfg, args):
@@ -88,14 +92,33 @@ def main(argv=None):
         p.error(f'unknown stages {sorted(unknown)}')
     log = Path(cfg['study']['results_dir']) / 'run_log.jsonl'
     log.parent.mkdir(parents=True, exist_ok=True)
+    provenance = {'config_sha256': hashlib.sha256(Path(cfg['config_path']).read_bytes()).hexdigest(), 'code_sha256': code_hash(),
+                  'git_commit': git_commit()}
     for stage in [s for s in STAGES if s in stages]:
         t0 = time.time()
         print(f'=== stage {stage} ===', flush=True)
         globals()[f'stage_{stage}'](cfg, args)
         with open(log, 'a') as f:
-            f.write(json.dumps({'stage': stage, 'seconds': round(time.time() - t0, 1), 'version': __version__,
+            f.write(json.dumps({'stage': stage, 'seconds': round(time.time() - t0, 1), 'version': __version__, **provenance,
                                 'python': sys.version.split()[0], 'platform': platform.platform(), 'pandas': pd.__version__,
                                 'finished': time.strftime('%Y-%m-%dT%H:%M:%S')}) + '\n')
+
+
+def code_hash():
+    h = hashlib.sha256()
+    for p in sorted(Path(__file__).parent.rglob('*')):
+        if p.suffix in ('.py', '.R'):
+            h.update(p.relative_to(Path(__file__).parent).as_posix().encode() + p.read_bytes())
+    return h.hexdigest()
+
+
+def git_commit():
+    try:
+        out = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=Path(__file__).parent, capture_output=True, text=True, check=True).stdout.strip()
+        dirty = subprocess.run(['git', 'status', '--porcelain', '--untracked-files=no'], cwd=Path(__file__).parent, capture_output=True, text=True).stdout.strip()
+        return out + ('-dirty' if dirty else '')
+    except (OSError, subprocess.CalledProcessError):
+        return None
 
 
 if __name__ == '__main__':

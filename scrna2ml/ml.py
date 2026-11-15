@@ -246,7 +246,7 @@ def run_scheme(cfg, compartment, scheme, models=None, n_jobs=8):
 
 
 def permutation_test(cfg, compartment, scheme, n_perm=None, n_jobs=8):
-    """Null distribution of the prespecified primary model: tumour/normal labels swapped at random within each donor,
+    """Null distribution of the primary model: tumour/normal labels swapped at random within each donor,
     then the complete nested procedure is repeated."""
     units, X, y = load(cfg, compartment)
     outer, inner = make_splits(scheme, units, cfg)
@@ -284,7 +284,7 @@ def permutation_test(cfg, compartment, scheme, n_perm=None, n_jobs=8):
 
 
 def final_model(cfg, compartment):
-    """Refit the prespecified primary model on all cohorts (inner leave-cohort-out tuning of k) for interpretation and reuse."""
+    """Refit the primary model on all cohorts (inner leave-cohort-out tuning of k) for interpretation and reuse."""
     units, X, y = load(cfg, compartment)
     inner = cohort_folds(units.cohort.to_numpy())
     search = GridSearchCV(pipeline(registry()[0][PRIMARY]), {'select__k': k_grid(cfg, X.shape[1])}, cv=inner, scoring='balanced_accuracy', refit=True)

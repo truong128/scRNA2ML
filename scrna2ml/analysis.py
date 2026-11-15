@@ -1,5 +1,6 @@
 """Secondary analyses: paired random-effects meta-analysis, batch (cohort) predictability, feature-set
-ablations, subgroup performance and feature-selection stability."""
+ablations, subgroup performance, feature-selection stability, a training-only gene panel and a
+technical-covariate negative control."""
 import json
 import warnings
 from pathlib import Path
@@ -11,7 +12,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import balanced_accuracy_score, roc_auc_score
 from sklearn.model_selection import cross_val_predict
 
-from . import ml
+from . import features, ml
 
 
 def _bh(p):
@@ -76,7 +77,8 @@ def paired_meta(cfg, compartment, min_donors=3, min_mean_logcpm=1.0):
     for t in ('gene', 'proportion'):
         m = res.type == t
         res.loc[m, 'fdr'] = _bh(res.loc[m, 'p'])
-    res['log2_fold_change'] = np.where(res.type == 'gene', res.pooled_difference / np.log(2), np.nan)
+    # Difference of means on the log2(1 + CPM) scale, not a ratio of mean expression.
+    res['log2_paired_difference'] = np.where(res.type == 'gene', res.pooled_difference / np.log(2), np.nan)
     out = Path(cfg['study']['results_dir']) / 'analysis' / compartment
     out.mkdir(parents=True, exist_ok=True)
     res.sort_values('p').to_csv(out / 'paired_meta_analysis.tsv', sep='\t', index=False)
@@ -172,3 +174,97 @@ def stability(cfg, compartment, scheme='loco', model=ml.PRIMARY):
     out.mkdir(parents=True, exist_ok=True)
     res.to_csv(out / f'selection_stability_{scheme}.tsv', sep='\t', index=False)
     return res
+
+
+def _oof_frame(units, y, idx, pred, score, fold):
+    return pd.DataFrame({'unit_id': units.unit_id.to_numpy()[idx], 'donor': units.donor_id.to_numpy()[idx],
+                         'cohort': units.cohort.to_numpy()[idx], 'truth': y[idx], 'prediction': np.asarray(pred, int),
+                         'score': score, 'fold': fold, 'probability': True})
+
+
+def fold_local_panel(cfg, compartment):
+    """Primary model under LOCO with the gene panel and CPM denominator derived from the training cohorts only.
+    A held-out cohort is scored only if its assay lists every selected gene; its CPM denominator is then the
+    training panel restricted to genes its assay lists (coverage is reported; 'strict' additionally requires 100%)."""
+    results = Path(cfg['study']['results_dir'])
+    spec = features.COMPARTMENTS[compartment]
+    units, X, y = ml.load(cfg, compartment)
+    qc = pd.read_csv(results / 'seurat' / 'qc_audit.tsv', sep='\t').set_index('library_id')
+    libs = [row.split('|') for row in units.libraries]
+    listed = {lib: set(pd.read_csv(Path(qc.loc[lib, 'path']) / 'genes.tsv.gz', header=None)[0].astype(str).str.replace('_', '-'))
+              for lib in {lib for ls in libs for lib in ls}}
+    counts = pd.DataFrame([pd.concat([features._read_counts(features._files(results / 'seurat', lib, spec['pseudobulk'])) for lib in ls],
+                                     axis=1).fillna(0).sum(axis=1) for ls in libs]).fillna(0)
+    unit_genes = [set.intersection(*(listed[lib] for lib in ls)) for ls in libs]
+    props = X[[c for c in X if c.startswith('prop::')]]
+    cohorts = units.cohort.to_numpy()
+    outer, inner = ml.make_splits('loco', units, cfg)
+    model = ml.registry()[0][ml.PRIMARY]
+    rows, frames = [], []
+    for fold, ((tr, te), inn) in enumerate(zip(outer, inner)):
+        panel = sorted(set.intersection(*(unit_genes[i] for i in tr)))
+        test_genes = set.intersection(*(unit_genes[i] for i in te))
+        usable = [g for g in panel if g in test_genes]
+        expr = pd.DataFrame(np.nan, index=units.index, columns=panel)
+        for idx, genes in ((tr, panel), (te, usable)):
+            m = counts.reindex(columns=genes, fill_value=0).loc[idx]
+            expr.loc[idx, genes] = np.log1p(m.div(m.sum(axis=1), axis=0) * 1e6).to_numpy()
+        Xf = pd.concat([expr.set_axis(['gene::' + g for g in panel], axis=1), props], axis=1)
+        f = ml.fit_one(ml.PRIMARY, model, Xf, y, tr, te, inn, ml.k_grid(cfg, Xf.shape[1]))
+        missing = sorted(g[6:] for g in f['features'] if g.startswith('gene::') and g[6:] not in test_genes)
+        coverage = len(usable) / len(panel)
+        row = {'held_out': sorted(set(cohorts[te]))[0], 'donors': len(set(units.donor_id[te])), 'training_panel_genes': len(panel),
+               'test_assay_coverage': coverage, 'k': f['k'], 'selected_genes_not_in_test_assay': len(missing),
+               'status': 'abstained' if missing else 'scored', 'strict_full_coverage': not missing and coverage == 1}
+        if not missing:
+            frame = _oof_frame(units, y, te, f['pred'], f['score'], fold).assign(strict=row['strict_full_coverage'])
+            frames.append(frame)
+            row.update(balanced_accuracy=balanced_accuracy_score(frame.truth, frame.prediction), auroc=roc_auc_score(frame.truth, frame.score))
+        rows.append(row)
+    oof = pd.concat(frames, ignore_index=True)
+    summary = {}
+    for name, d in (('all_scored', oof), ('strict_full_coverage', oof[oof.strict])):
+        d = d.assign(fold=pd.factorize(d.fold)[0])
+        summary[name] = dict(ml.summarize(d, cfg['ml']['bootstrap'], cfg['study']['seed']), cohorts=sorted(d.cohort.unique()))
+    saved = pd.read_csv(results / 'ml' / compartment / 'loco' / 'oof_predictions.tsv', sep='\t')
+    saved = saved[saved.model == ml.PRIMARY].set_index('unit_id').loc[oof.unit_id]
+    for name, mask in (('all_scored', np.ones(len(oof), bool)), ('strict_full_coverage', oof.strict.to_numpy())):
+        s = saved[mask]
+        summary[name]['original_panel_same_units'] = {'balanced_accuracy': balanced_accuracy_score(s.truth, s.prediction),
+                                                      'auroc': roc_auc_score(s.truth, s.score)}
+    summary['max_score_difference_vs_original_on_strict_units'] = float(np.abs(saved.score.to_numpy()[oof.strict.to_numpy()]
+                                                                              - oof.score.to_numpy()[oof.strict.to_numpy()]).max())
+    out = results / 'analysis' / compartment
+    out.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_csv(out / 'fold_local_panel_loco.tsv', sep='\t', index=False)
+    oof.to_csv(out / 'fold_local_panel_oof.tsv', sep='\t', index=False)
+    ml.dump(out / 'fold_local_panel_summary.json', summary)
+    return rows, summary
+
+
+TECHNICAL = ['median_genes_per_cell', 'median_umis_per_cell', 'median_percent_mt', 'unknown_fraction']
+
+
+def technical_control(cfg, compartment):
+    """Negative control: can per-specimen technical QC summaries alone separate tumour from normal under LOCO?
+    'cell_quality' uses per-cell quality medians only; 'with_yield' adds compartment cell count and library count,
+    which also carry biology (e.g. immune infiltration)."""
+    results = Path(cfg['study']['results_dir'])
+    units, _, y = ml.load(cfg, compartment)
+    qc = pd.read_csv(results / 'seurat' / 'qc_audit.tsv', sep='\t').set_index('library_id')
+    tech = pd.DataFrame([qc.loc[row.split('|'), TECHNICAL].mean() for row in units.libraries]).reset_index(drop=True)
+    sets = {'cell_quality': tech, 'with_yield': tech.assign(log_cells=np.log1p(units.cells.to_numpy()), libraries=units.n_libraries.to_numpy())}
+    outer, inner = ml.make_splits('loco', units, cfg)
+    model = ml.registry()[0][ml.PRIMARY]
+    summary = {}
+    for name, T in sets.items():
+        frames = []
+        for fold, ((tr, te), inn) in enumerate(zip(outer, inner)):
+            f = ml.fit_one(ml.PRIMARY, model, T, y, tr, te, inn, ['all'])
+            frames.append(_oof_frame(units, y, te, f['pred'], f['score'], fold))
+        summary[name] = dict(ml.summarize(pd.concat(frames, ignore_index=True), cfg['ml']['bootstrap'], cfg['study']['seed']),
+                             features=list(T.columns))
+    out = results / 'analysis' / compartment
+    out.mkdir(parents=True, exist_ok=True)
+    ml.dump(out / 'technical_control_loco.json', summary)
+    return summary
