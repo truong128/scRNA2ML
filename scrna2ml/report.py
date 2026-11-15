@@ -305,9 +305,35 @@ def fig_performance(R, out, comp='immune'):
     ax.set_xlim(0.3, 1.02)
     ax.invert_yaxis()
     ax.set_xlabel('Balanced accuracy (95% donor-bootstrap CI)')
-    ax.legend([Line2D([], [], marker='o', color='#C0392B', ls=''), Line2D([], [], marker='s', color='#2C3E50', ls='')], ['Logistic (prespecified)', f"Nested selection ({n_candidates(R, comp, 'loco')} candidates)"], frameon=False, loc='lower left', fontsize=8.5)
+    ax.legend([Line2D([], [], marker='o', color='#C0392B', ls=''), Line2D([], [], marker='s', color='#2C3E50', ls='')], ['Logistic (prespecified)', f"Nested selection ({n_candidates(R, comp, 'loco')} candidates)"], frameon=False, loc='upper left', fontsize=8.5)
     panel(ax, 'c')
     ax = fig.add_subplot(gs[1, 1])
+    ablation_panel(R, ax, comp)
+    panel(ax, 'd')
+    save(fig, out / 'Figure3_model_performance')
+
+
+def ablation_panel(R, ax, comp):
+    ab = R.analysis(comp, 'feature_set_ablation_loco.tsv')
+    sets = ab[~ab.feature_set.str.startswith('single::')].sort_values('auroc', ascending=False)
+    single = ab[ab.feature_set.str.startswith('single::')].sort_values('auroc', ascending=False)
+    rows = [(s.feature_set.replace('_', ' '), s.auroc, '#C0392B') for s in sets.itertuples()]
+    rows += [(s.feature_set.split('::')[-1], s.auroc, '#7F8C8D') for s in single.itertuples()]
+    y = np.arange(len(rows)) + np.where(np.arange(len(rows)) >= len(sets), .6, 0)
+    ax.barh(y, [r[1] for r in rows], color=[r[2] for r in rows], height=.75)
+    for yi, r in zip(y, rows):
+        ax.text(r[1] + .015, yi, f'{r[1]:.2f}', va='center', fontsize=8.5)
+    ax.set_yticks(y, [r[0] for r in rows])
+    ax.invert_yaxis()
+    ax.axvline(.5, ls='--', color='grey', lw=.5)
+    ax.set_xlim(.3, 1.08)
+    ax.set_xlabel('Leave-one-cohort-out AUROC')
+    ax.legend([Line2D([], [], color='#C0392B', lw=6), Line2D([], [], color='#7F8C8D', lw=6)],
+              ['Feature set (nested logistic)', 'Single cell-type proportion'], frameon=False, fontsize=8.5,
+              loc='lower center', bbox_to_anchor=(.45, 1.0), ncol=1)
+
+
+def permutation_panel(R, ax):
     tests = [(c2, s) for c2, ss in R.cfg['ml'].get('permutation_schemes', {}).items() for s in ss
              if (R.ml_dir(c2, s) / 'permutation_null.tsv').exists()]
     rng = np.random.default_rng(0)
@@ -330,8 +356,6 @@ def fig_performance(R, out, comp='immune'):
                Line2D([], [], marker='D', ls='', color='#C0392B', ms=5)],
               ['Permuted (null)', 'Null 95th percentile (P = 0.05)', f'Observed (all P ≤ {max(R.perm(*t)["p_auroc"] for t in tests):.2g})'],
               frameon=False, fontsize=8, loc='lower center', bbox_to_anchor=(.5, 1.0), ncol=1)
-    panel(ax, 'd')
-    save(fig, out / 'Figure3_model_performance')
 
 
 def fig_biology(R, out, comp='immune'):
@@ -421,12 +445,7 @@ def fig_supplement(R, out):
     ax.set_xlim(0, 1)
     panel(ax, 'a')
     ax = axes[0, 1]
-    ab = R.analysis('immune', 'feature_set_ablation_loco.tsv')
-    ab = ab.assign(label=ab.feature_set.str.replace('single::prop::', 'single: ', regex=False).str.replace('_', ' ')).sort_values('auroc')
-    ax.barh(ab.label, ab.auroc, color=np.where(ab.feature_set.str.startswith('single'), '#BBBBBB', '#C0392B'))
-    ax.axvline(.5, ls='--', color='grey', lw=.5)
-    ax.set_xlabel('LOCO AUROC (logistic; single\nfeatures direction-fixed)')
-    ax.set_xlim(0, 1)
+    permutation_panel(R, ax)
     panel(ax, 'b')
     ax = axes[1, 0]
     a, b = R.metrics('immune', 'loco').set_index('model'), R.metrics('immune', 'pooled').set_index('model')
@@ -454,7 +473,7 @@ def fig_supplement(R, out):
     ax.set_yticks([0, 1], ['Normal', 'Tumour'])
     ax.set(xlabel='Predicted', ylabel='True', title='Logistic, LOCO (immune)')
     panel(ax, 'd')
-    save(fig, out / 'FigureS1_batch_ablation_confusion')
+    save(fig, out / 'FigureS1_batch_permutation_confusion')
 
 
 def fig_subgroups(R, out, comp='immune'):

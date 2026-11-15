@@ -4,10 +4,10 @@ title: "scRNA2ML: from public single-cell RNA-seq archives to cross-cohort valid
 version: 1.0.0
 date-released: 2026-11-15
 license: MIT
-repository-code: "https://github.com/<your-username>/scRNA2ML"
+repository-code: "https://github.com/truong128/scRNA2ML"
 authors:
-  - family-names: "<Family name>"
-    given-names: "<Given names>"
+  - family-names: "Nguyen"
+    given-names: "Truong"
 keywords:
   - single-cell RNA-seq
   - machine learning
