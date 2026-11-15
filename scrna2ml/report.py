@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
-from scipy.stats import spearmanr
+from scipy.stats import gaussian_kde, spearmanr
 from sklearn.metrics import confusion_matrix, roc_curve
 
 from . import graphical
@@ -351,26 +351,34 @@ def ablation_panel(R, ax, comp):
 def permutation_panel(R, ax):
     tests = [(c2, s) for c2, ss in R.cfg['ml'].get('permutation_schemes', {}).items() for s in ss
              if (R.ml_dir(c2, s) / 'permutation_null.tsv').exists()]
-    rng = np.random.default_rng(0)
+    grid = np.linspace(.2, 1.02, 400)
+    height = .78
     for i, (c2, s) in enumerate(tests):
-        null = pd.read_csv(R.ml_dir(c2, s) / 'permutation_null.tsv', sep='\t').auroc
+        null = pd.read_csv(R.ml_dir(c2, s) / 'permutation_null.tsv', sep='\t').auroc.to_numpy()
         perm = R.perm(c2, s)
-        cut = float(np.quantile(null, .95))
-        ax.scatter(null, i + rng.uniform(-.17, .17, len(null)), s=4, color='#AAAAAA', lw=0, rasterized=True)
-        ax.plot([cut, cut], [i - .3, i + .3], color='k', lw=1.2)
-        ax.scatter(perm['observed_auroc'], i, marker='D', s=30, color='#C0392B', zorder=3)
-        ax.text(perm['observed_auroc'], i - .36, f"{perm['observed_auroc']:.2f}", color='#C0392B', fontsize=8.5, ha='center', va='bottom')
-        ax.text(cut, i + .36, f'{cut:.2f}', fontsize=8.5, ha='center', va='top')
-    ax.set_yticks(range(len(tests)), [f'{c2}\n{scheme_label(s)}' for c2, s in tests], fontsize=8.5)
-    ax.set_ylim(len(tests) - .4, -.75)
-    ax.set_xlim(.25, 1.02)
-    ax.axvline(.5, ls='--', color='grey', lw=.5)
+        obs = perm['observed_auroc']
+        base = len(tests) - 1 - i
+        dens = gaussian_kde(null)(grid)
+        dens = height * dens / dens.max()
+        ax.fill_between(grid, base, base + dens, color='#BFC5CA', lw=0, zorder=1)
+        ax.plot(grid, base + dens, color='#5D6D7E', lw=.8, zorder=2)
+        ax.plot([obs, obs], [base, base + height], color='#C0392B', lw=2.2, zorder=3)
+        ax.annotate('', xy=(obs - .01, base + .22), xytext=(null.max() + .01, base + .22),
+                    arrowprops=dict(arrowstyle='<->', color='#333333', lw=.8, shrinkA=0, shrinkB=0))
+        z = (obs - null.mean()) / null.std(ddof=1)
+        tr = ax.get_yaxis_transform()
+        ax.text(1.03, base + .5, f'{obs:.2f}', transform=tr, color='#C0392B', fontsize=10, fontweight='bold', va='center', ha='left')
+        ax.text(1.03, base + .2, f"z = {z:.1f}, P = {perm['p_auroc']:.3f}", transform=tr, fontsize=8.5, va='center', ha='left')
+        ax.axhline(base, color='#333333', lw=.5, zorder=0)
+    ax.axvline(.5, ls='--', color='grey', lw=.6, zorder=0)
+    ax.set_yticks([len(tests) - 1 - i + .3 for i in range(len(tests))], [f'{c2}\n{scheme_label(s)}' for c2, s in tests], fontsize=8.5)
+    ax.tick_params(axis='y', length=0)
+    ax.spines['left'].set_visible(False)
+    ax.set_xlim(.2, 1.02)
+    ax.set_ylim(-.05, len(tests) - .05)
     n_perm = R.perm(*tests[0])['n_permutations'] if tests else 0
-    ax.set_xlabel(f'AUROC ({n_perm} within-donor\nlabel permutations)')
-    ax.legend([Line2D([], [], marker='o', ls='', color='#AAAAAA', ms=3), Line2D([], [], color='k', lw=1.2),
-               Line2D([], [], marker='D', ls='', color='#C0392B', ms=5)],
-              ['Permuted (null)', 'Null 95th percentile (P = 0.05)', f'Observed (all P ≤ {max(R.perm(*t)["p_auroc"] for t in tests):.2g})'],
-              frameon=False, fontsize=8, loc='lower center', bbox_to_anchor=(.5, 1.0), ncol=1)
+    ax.set_xlabel(f'AUROC: null from {n_perm} within-donor label\npermutations (grey) vs observed (red)')
+    ax.text(1.03, len(tests) - .05, 'Observed\nAUROC', transform=ax.get_yaxis_transform(), fontsize=8.5, va='bottom', ha='left', color='#C0392B')
 
 
 def fig_biology(R, out, comp='immune'):
