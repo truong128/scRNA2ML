@@ -19,9 +19,87 @@ datasets:
       - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE131nnn/GSE131907/suppl/GSE131907_Lung_Cancer_Feature_Summary.xlsx
     citation: Kim et al. 2020 Nat Commun
   GSE154826:
-    source: geo_listing
-    listing: https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/
-    pattern: 'GSE154826_[A-Za-z0-9_]+\.(?:tar\.gz|csv\.gz)'
+    source: geo
+    # Explicit file list: NCBI no longer serves GEO directory listings.
+    files:
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_1.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_10.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_11.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_14.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_15.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_16.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_17.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_18.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_19.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_2.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_22.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_23.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_230.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_231.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_24.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_244.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_245.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_25.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_26.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_27.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_28.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_29.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_292.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_293.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_3.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_30.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_307.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_308.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_309.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_31.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_32.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_33.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_342.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_343.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_344.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_345.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_346.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_347.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_348.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_350.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_351.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_36.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_37.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_38.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_39.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_4.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_40.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_41.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_42.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_43.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_44.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_45.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_46.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_47.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_48.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_49.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_5.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_50.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_51.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_52.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_53.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_54.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_55.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_56.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_6.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_668.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_7.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_8.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_88.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_89.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_9.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_90.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_91.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_92.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_93.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_94.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_amp_batch_ID_95.tar.gz
+      - https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/GSE154826_sample_annots.csv.gz
     citation: Leader et al. 2021 Cancer Cell
   GSE123902:
     source: geo

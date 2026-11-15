@@ -105,6 +105,24 @@ tail -f logs/run.log                     # live progress
 cat results/run_log.jsonl                # finished stages, durations, versions
 ```
 
+## Reproducing into a separate directory
+
+[`scripts/reproduce.sh`](scripts/reproduce.sh) runs the complete pipeline into a new directory, leaving the repository's `data/` and `results/` untouched. It writes a copy of the configuration with `data_dir` and `results_dir` pointing into that directory, then runs every stage.
+
+```bash
+scripts/reproduce.sh /path/to/rerun                                  # download everything again (~40 GB free needed)
+scripts/reproduce.sh /path/to/rerun --reuse-raw data/raw --compare results
+```
+
+| Option | Description |
+|---|---|
+| `--reuse-raw DIR` | Start from existing raw downloads. Files are cloned copy-on-write (APFS) or hard-linked, so `DIR` is never modified and little extra space is used (~25 GB free needed). The download stage still checks every file. |
+| `--compare RESULTS_DIR` | When the run finishes, compare `key_numbers.json` and every publication table with an earlier results directory. |
+| `--stages LIST` | Run a subset of stages. |
+| `--config FILE` | Study configuration to copy (default `config/nsclc.yaml`). |
+
+Set `PYTHON` to the interpreter of the environment if it is not the active `python`. After the download stage, raw files are verified against their SHA-256 manifests. Rerunning with the same directory resumes from the last checkpoint. The comparison can also be run on its own: `python scripts/compare_runs.py OLD_RESULTS NEW_RESULTS`.
+
 ## Running individual stages
 
 `--stages` accepts any comma-separated subset; stages always execute in pipeline order.
@@ -137,10 +155,10 @@ datasets:                     # one entry per cohort; the key selects the adapte
   GSE117570:
     source: geo               # explicit file list
     files: [https://ftp.ncbi.nlm.nih.gov/geo/series/GSE117nnn/GSE117570/suppl/GSE117570_RAW.tar]
-  GSE154826:
-    source: geo_listing       # every file in a directory listing matching a regex
-    listing: https://ftp.ncbi.nlm.nih.gov/geo/series/GSE154nnn/GSE154826/suppl/
-    pattern: 'GSE154826_[A-Za-z0-9_]+\.(?:tar\.gz|csv\.gz)'
+  E-MTAB-13526:
+    source: biostudies_listing   # every file in a directory listing matching a regex
+    listing: https://ftp.ebi.ac.uk/biostudies/fire/E-MTAB-/526/E-MTAB-13526/Files/
+    pattern: '(?:P[0-9]+_[BT][0-9]+-(?:matrix\.mtx|barcodes\.tsv|features\.tsv)\.gz|E-MTAB-13526\.(?:sdrf|idf)\.txt)'
 
 qc:                           # applied identically to every library
   min_counts: 500
@@ -305,6 +323,7 @@ scRNA2ML/
 │   ├── explain.py                 out-of-cohort SHAP and association knowledge graph
 │   ├── report.py                  tables and figures
 │   └── graphical.py               graphical abstract
+├── scripts/                       reproduce.sh (rerun into a separate directory), compare_runs.py
 ├── docs/figures/                  images used in this README
 ├── environment.yml
 ├── pyproject.toml
