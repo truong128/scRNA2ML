@@ -4,7 +4,7 @@ import json
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch, Rectangle
+from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Rectangle
 from sklearn.metrics import roc_curve
 
 MM = 1 / 25.4
@@ -50,7 +50,7 @@ def draw(R, path):
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis('off')
-    fig.text(0.5, 0.86, 'Immune-compartment classifiers of NSCLC tumour vs matched adjacent lung,\nvalidated across independent scRNA-seq cohorts',
+    fig.text(0.5, 0.86, 'Immune-compartment classifiers of NSCLC tumour vs matched non-tumour lung,\nvalidated across independent scRNA-seq cohorts',
              ha='center', va='center', fontsize=16, fontweight='bold', color=INK, linespacing=1.25)
     titles = ['1  Public scRNA-seq', '2  Identical QC', '3  Donor features', '4  Cohort-held-out ML']
     for x, t, c in zip(XS, titles, COLS):
@@ -66,11 +66,13 @@ def draw(R, path):
     for i, (c, n) in enumerate(cohorts.items()):
         yy = top - 0.175 - i * 0.05
         ax.text(x0 + 0.012, yy, c, fontsize=10.5, va='center', color=INK)
-        ax.add_patch(Rectangle((x0 + 0.112, yy - 0.019), 0.085 * n / maxn, 0.038, color=COLS[0], alpha=.8))
+        half = 0.085 * n / maxn / 2
+        ax.add_patch(Rectangle((x0 + 0.112, yy - 0.019), half, 0.038, color=GREEN))
+        ax.add_patch(Rectangle((x0 + 0.112 + half, yy - 0.019), half, 0.038, color=ACCENT))
         ax.text(x0 + 0.117 + 0.085 * n / maxn, yy, str(n), fontsize=10.5, va='center', color=INK)
-    for k, (lab, col) in enumerate([('Tumour', ACCENT), ('Adjacent normal', GREEN)]):
+    for k, (lab, col) in enumerate([('Adjacent normal', GREEN), ('Tumour', ACCENT)]):
         yb = Y + 0.205 - k * 0.042
-        ax.add_patch(Circle((x0 + 0.06, yb), 0.009, color=col))
+        ax.add_patch(Rectangle((x0 + 0.052, yb - 0.012), 0.016, 0.024, color=col))
         ax.text(x0 + 0.075, yb, lab, fontsize=10.5, va='center', color=INK)
     _lines(ax, x0, Y + 0.085, ['Same donor, same fraction', '(CD45+ or non-CD45-selected)'], size=10.5, gap=0.042)
 
@@ -95,7 +97,9 @@ def draw(R, path):
     hm[:, 1::2] += 0.9
     hax = fig.add_axes([x0 + 0.045, (Y + 0.44) * 0.9, 0.145, 0.25 * 0.9])
     hax.imshow(hm, cmap='RdBu_r', aspect='auto', vmin=-2.5, vmax=2.5)
-    hax.set_xticks(range(0, 12, 2), ['N/T'] * 6, fontsize=8.5)
+    hax.set_xticks(range(12), ['N', 'T'] * 6, fontsize=9, fontweight='bold')
+    for i, t in enumerate(hax.get_xticklabels()):
+        t.set_color(GREEN if i % 2 == 0 else ACCENT)
     hax.tick_params(length=0, pad=2)
     hax.set_yticks([])
     for s in hax.spines.values():

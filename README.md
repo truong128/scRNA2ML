@@ -57,7 +57,7 @@ download ─► prepare ─► seurat ─► features ─► ml ─► analysis 
 | `seurat` | `seurat.py`, `R/seurat_qc.R` | Per-library QC (UMI, gene and mitochondrial thresholds), normalisation, PCA, clustering, UMAP, marker-based broad annotation; exports whole-library and immune-compartment pseudobulk plus cell-type composition. | `results/seurat/<library>/`, `qc_audit.tsv` |
 | `features` | `features.py` | Builds paired donor × tissue matrices: log1p CPM over the shared gene panel plus cell-type proportions, for each analysis compartment. | `results/features/<compartment>/` |
 | `ml` | `ml.py`, `models.py`, `deep_models.py` | Nested evaluation of all models under every configured scheme, permutation tests, final interpretable model. | `results/ml/<compartment>/<scheme>/` |
-| `analysis` | `analysis.py` | Paired random-effects meta-analysis, cohort (batch) predictability, feature-set ablation, subgroup performance, feature-selection stability, training-only gene-panel sensitivity analysis, technical-covariate negative control. | `results/analysis/<compartment>/` |
+| `analysis` | `analysis.py`, `explain.py` | Paired random-effects meta-analysis, cohort (batch) predictability, feature-set ablation, subgroup performance, feature-selection stability, training-only gene-panel sensitivity analysis, technical-covariate negative control, out-of-cohort SHAP explanations, association knowledge graph. | `results/analysis/<compartment>/` |
 | `report` | `report.py`, `graphical.py` | Main and supplementary tables (TSV + Excel), figures (PDF, PNG 300 dpi, editable SVG), graphical abstract and a machine-readable summary. | `results/publication/` |
 
 ## Installation
@@ -207,6 +207,10 @@ and tuned by `GridSearchCV` on balanced accuracy over the inner folds. **Nested 
 
 **Technical-covariate negative control.** The primary model is run under leave-one-cohort-out on library-quality summaries only (median genes, UMIs and mitochondrial percentage per cell, fraction of unannotated cells; optionally cell and library counts) to measure how much tissue information is carried by sample quality alone.
 
+**Out-of-cohort SHAP.** Each leave-one-cohort-out fold of the primary logistic model and of extra trees is refitted (the refitted scores are checked against the saved predictions) and explained only on its held-out cohort: exact linear SHAP on the log-odds scale and TreeSHAP on the probability scale. Global importance is the mean |SHAP| over all held-out specimens.
+
+**Knowledge graph.** An association graph links features to a tumour node and to each other. Feature–tumour edges are weighted by the paired standardised effect (data-only layer) or by its average with scaled out-of-cohort SHAP and LOCO selection frequency (integrated layer). Feature–feature edges join features whose within-donor paired differences co-vary within cohorts (|ρ| ≥ 0.5, FDR < 0.01). Nodes are ranked by a composite pathway score (PageRank, personalised PageRank, path proximity, direct-edge weight, betweenness), and each gene is annotated with the cell-type proportion it tracks, which separates composition-linked from state-linked genes. Edges are associations, not causal relations.
+
 ## Outputs
 
 ```
@@ -220,10 +224,11 @@ results/
 ├── analysis/<compartment>/         paired_meta_analysis.tsv, cohort_predictability.json, feature_set_ablation_loco.tsv,
 │                                   subgroups_loco.tsv, selection_stability_loco.tsv,
 │                                   fold_local_panel_{loco,oof}.tsv, fold_local_panel_summary.json,
-│                                   technical_control_loco.json
+│                                   technical_control_loco.json, shap_loco_*.tsv.gz, shap_loco_summary.tsv,
+│                                   shap_loco_checks.json, knowledge_graph_{nodes,edges}.tsv, knowledge_graph_summary.json
 ├── publication/
-│   ├── tables/                     Table1–2, S1–S12 (TSV) and tables.xlsx
-│   ├── figures/                    Figure1–4, S1–S2 as PDF, PNG (300 dpi) and SVG (editable text)
+│   ├── tables/                     Table1–3, S1–S15 (TSV) and tables.xlsx
+│   ├── figures/                    Figure1–5, S1–S4 as PDF, PNG (300 dpi) and SVG (editable text)
 │   └── key_numbers.json            every headline number, for programmatic manuscript checks
 └── run_log.jsonl                   stage timings, software versions, config/code SHA-256 and git commit
 ```
@@ -232,11 +237,14 @@ results/
 |---|---|
 | `Table1_cohorts` | Cohort, reference, chemistry, sorting fractions, libraries, cells and paired donors per compartment |
 | `Table2_performance` | Primary and nested-selection performance for every compartment × scheme |
+| `Table3_integrated_evidence` | Meta-analysis, selection stability, SHAP and knowledge-graph ranks for the top-ranked features |
 | `S1` – `S4` | Library exclusions, per-library QC, analysed units, unit exclusions |
 | `S5` | All models for every scheme |
 | `S6` – `S10` | Meta-analysis, ablation, subgroups, selection stability, final-model coefficients |
 | `S11` | Leave-one-cohort-out performance with a training-only gene panel, per held-out cohort (coverage, abstention) |
 | `S12` | Technical-covariate negative control |
+| `S13` | Out-of-cohort SHAP summary (logistic and extra trees) |
+| `S14` – `S15` | Knowledge-graph nodes (scores and components) and edges |
 
 Figures use Times New Roman throughout; SVGs keep text as editable `<text>` elements and PDFs embed TrueType fonts.
 
@@ -294,6 +302,7 @@ scRNA2ML/
 │   ├── tabular_architectures.py   FT-Transformer, ResNet and MLP definitions
 │   ├── ml.py                      nested validation, permutation tests, final model
 │   ├── analysis.py                meta-analysis, batch diagnostics, ablation, subgroups, stability, sensitivity controls
+│   ├── explain.py                 out-of-cohort SHAP and association knowledge graph
 │   ├── report.py                  tables and figures
 │   └── graphical.py               graphical abstract
 ├── docs/figures/                  images used in this README

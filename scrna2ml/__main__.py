@@ -61,7 +61,7 @@ def stage_ml(cfg, args):
 
 
 def stage_analysis(cfg, args):
-    from . import analysis
+    from . import analysis, explain
     for comp in cfg['features']['compartments']:
         analysis.paired_meta(cfg, comp)
         analysis.cohort_predictability(cfg, comp)
@@ -70,6 +70,8 @@ def stage_analysis(cfg, args):
         analysis.stability(cfg, comp, 'loco')
         analysis.fold_local_panel(cfg, comp)
         analysis.technical_control(cfg, comp)
+        explain.shap_loco(cfg, comp)
+        explain.knowledge_graph(cfg, comp)
 
 
 def stage_report(cfg, args):

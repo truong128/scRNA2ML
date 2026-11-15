@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
+from scipy.stats import spearmanr
 from sklearn.metrics import confusion_matrix, roc_curve
 
 from . import graphical
@@ -142,7 +143,7 @@ def table_performance(R):
 
 def write_tables(R, out):
     out.mkdir(parents=True, exist_ok=True)
-    tables = {'Table1_cohorts': table_cohorts(R), 'Table2_performance': table_performance(R)}
+    tables = {'Table1_cohorts': table_cohorts(R), 'Table2_performance': table_performance(R), 'Table3_integrated_evidence': table_evidence(R)}
     tables['S1_exclusions'] = pd.read_csv(R.data / 'prepared' / 'exclusions.tsv', sep='\t')
     tables['S2_library_QC'] = pd.read_csv(R.root / 'seurat' / 'qc_audit.tsv', sep='\t').drop(columns=['path'])
     for comp in R.cfg['features']['compartments']:
@@ -160,6 +161,9 @@ def write_tables(R, out):
         tables[f'S11_{comp}_training_only_panel'] = R.analysis(comp, 'fold_local_panel_loco.tsv')
         tech = json.loads((R.root / 'analysis' / comp / 'technical_control_loco.json').read_text())
         tables[f'S12_{comp}_technical_control'] = pd.DataFrame([{'feature_set': k, 'features': ', '.join(v.pop('features')), **v} for k, v in tech.items()])
+        tables[f'S13_{comp}_shap_loco'] = R.analysis(comp, 'shap_loco_summary.tsv')
+        tables[f'S14_{comp}_knowledge_graph_nodes'] = R.analysis(comp, 'knowledge_graph_nodes.tsv')
+        tables[f'S15_{comp}_knowledge_graph_edges'] = R.analysis(comp, 'knowledge_graph_edges.tsv')
     for name, t in tables.items():
         t.to_csv(out / f'{name}.tsv', sep='\t', index=False)
     with pd.ExcelWriter(out / 'tables.xlsx') as xl:
@@ -503,6 +507,236 @@ def fig_subgroups(R, out, comp='immune'):
     save(fig, out / 'FigureS2_subgroups')
 
 
+UP, DOWN = '#C0392B', '#2E86C1'
+PROP_COLORS = {'T': '#2E86C1', 'NK': '#1ABC9C', 'B': '#F39C12', 'Plasma': '#D35400', 'Myeloid': '#8E44AD', 'DC': '#7F8C8D', 'Mast': '#E84393'}
+
+
+def fmt_rank(v):
+    return '—' if v is None or pd.isna(v) else str(int(v))
+
+
+def feature_label(f):
+    kind, name = f.split('::', 1)
+    return f'{name} fraction' if kind == 'prop' else name
+
+
+def italicize(labels):
+    for t in labels:
+        if not t.get_text().endswith('fraction'):
+            t.set_fontstyle('italic')
+
+
+def shap_frames(R, comp, model):
+    S = pd.read_csv(R.root / 'analysis' / comp / f'shap_loco_{model}.tsv.gz', sep='\t').set_index('unit_id')
+    Z = pd.read_csv(R.root / 'analysis' / comp / f'shap_loco_{model}_values.tsv.gz', sep='\t').set_index('unit_id')
+    return S, Z
+
+
+def shap_beeswarm(R, ax, comp, model='logistic_regression', n=15):
+    S, Z = shap_frames(R, comp, model)
+    summ = R.analysis(comp, 'shap_loco_summary.tsv')
+    top = summ[summ.model == model].nsmallest(n, 'rank').feature.tolist()[::-1]
+    rng = np.random.default_rng(0)
+    for i, f in enumerate(top):
+        m = Z[f].notna()
+        s, z = S.loc[m, f].to_numpy(), Z.loc[m, f].clip(-2, 2).to_numpy()
+        order = np.argsort(s)
+        jitter = np.zeros(len(s))
+        jitter[order] = rng.uniform(-.32, .32, len(s))
+        sc = ax.scatter(s, i + jitter, c=z, cmap='coolwarm', vmin=-2, vmax=2, s=6, lw=0, rasterized=True)
+    ax.axvline(0, color='grey', lw=.5)
+    ax.set_yticks(range(len(top)), [feature_label(f) for f in top])
+    italicize(ax.get_yticklabels())
+    ax.set_xlabel('SHAP value, log-odds of tumour\n(held-out cohorts, primary logistic)')
+    cb = plt.colorbar(sc, ax=ax, fraction=.05, pad=.02, ticks=[-2, 0, 2])
+    cb.ax.set_yticklabels(['low', '0', 'high'])
+    cb.set_label('Feature value (fold-standardised)')
+    cb.outline.set_visible(False)
+
+
+def shap_bars(R, ax, comp, model='extra_trees', ref='logistic_regression', n=15):
+    summ = R.analysis(comp, 'shap_loco_summary.tsv')
+    d = summ[summ.model == model].nsmallest(n, 'rank').iloc[::-1]
+    ref_rank = summ[summ.model == ref].set_index('feature')['rank']
+    ax.barh(range(len(d)), d.mean_abs_shap, color=np.where(d.value_shap_correlation > 0, UP, DOWN))
+    ax.set_yticks(range(len(d)), [feature_label(f) for f in d.feature])
+    italicize(ax.get_yticklabels())
+    xmax = d.mean_abs_shap.max()
+    for i, f in enumerate(d.feature):
+        ax.text(xmax * 1.04, i, f'{int(ref_rank[f])}', va='center', fontsize=8.5)
+    ax.text(xmax * 1.04, len(d) - .45, 'Logistic\nrank', fontsize=8.5, va='bottom')
+    ax.set_ylim(-.6, len(d) + .9)
+    ax.set_xlim(0, xmax * 1.25)
+    ax.set_xlabel('Mean |SHAP|, tumour probability\n(held-out cohorts, extra trees)')
+    ax.legend([plt.Rectangle((0, 0), 1, 1, color=UP), plt.Rectangle((0, 0), 1, 1, color=DOWN)], ['higher value → tumour', 'lower value → tumour'],
+              frameon=False, loc='upper center', bbox_to_anchor=(0.45, -0.2), ncol=2, fontsize=8.5, columnspacing=1)
+
+
+def kg_display_nodes(nodes, layer, n_genes=16):
+    genes = nodes[nodes.type == 'gene'].nsmallest(n_genes, f'rank_{layer}')
+    props = nodes[(nodes.type == 'proportion') & nodes.concordant_significant]
+    return pd.concat([genes, props])
+
+
+def kg_panel(R, ax, comp, layer='integrated', min_rho=0.5):
+    nodes = R.analysis(comp, 'knowledge_graph_nodes.tsv')
+    edges = R.analysis(comp, 'knowledge_graph_edges.tsv')
+    edges = edges[edges.layer == layer]
+    show = kg_display_nodes(nodes, layer).sort_values(f'path_distance_{layer}').reset_index(drop=True)
+    n = len(show)
+    ranks = np.arange(n)
+    radius = 0.34 + 0.66 * ranks / max(n - 1, 1)
+    angle = np.pi / 2 - 2 * np.pi * ranks / n
+    pos = {f: (1.6 * r * np.cos(a), r * np.sin(a)) for f, r, a in zip(show.feature, radius, angle)}
+    ff = edges[(edges.kind == 'feature-feature') & edges.source.isin(pos) & edges.target.isin(pos)]
+    for e in ff.itertuples():
+        (x1, y1), (x2, y2) = pos[e.source], pos[e.target]
+        ax.plot([x1, x2], [y1, y2], ls='--', color='#6C5CE7', lw=.4 + 1.6 * (e.weight - min_rho) / (1 - min_rho), alpha=.55, zorder=1)
+    fo = edges[edges.kind == 'feature-outcome'].set_index('source')
+    for f, (x, y) in pos.items():
+        if f in fo.index:
+            ax.plot([0, x], [0, y], color=UP if fo.loc[f, 'sign'] > 0 else DOWN, lw=.6 + 3.2 * fo.loc[f, 'weight'], alpha=.85, zorder=2, solid_capstyle='round')
+    comp_score = show[f'composite_{layer}'].fillna(0)
+    size = 50 + 300 * (comp_score - comp_score.min()) / max(comp_score.max() - comp_score.min(), 1e-9)
+    for (f, (x, y)), r, s in zip(pos.items(), show.itertuples(), size):
+        linked = r.linked_proportion if pd.notna(r.rho_with_linked_proportion) and abs(r.rho_with_linked_proportion) >= min_rho else None
+        face = PROP_COLORS.get(linked, '#BBBBBB') if linked else 'white'
+        if r.type == 'proportion':
+            ax.scatter(x, y, s=s, marker='s', color=PROP_COLORS.get(f.split('::')[1], '#555555'), edgecolor='#333333', lw=1, zorder=3)
+        else:
+            ax.scatter(x, y, s=s, color=face, edgecolor='#333333', lw=1, zorder=3)
+        a = np.arctan2(y / 1.0, x / 1.6)
+        off = 0.07 + 0.00025 * s
+        ax.text(x + 1.6 * off * np.cos(a), y + off * np.sin(a), feature_label(f), fontsize=9.5,
+                ha='left' if np.cos(a) > 0.2 else 'right' if np.cos(a) < -0.2 else 'center',
+                va='center', fontstyle='normal' if r.type == 'proportion' else 'italic', zorder=4)
+    ax.scatter(0, 0, s=2000, color=UP, zorder=5, edgecolor='white', lw=1.5)
+    ax.text(0, 0, 'Tumour', color='white', fontweight='bold', ha='center', va='center', fontsize=9, zorder=6)
+    ax.set_xlim(-2.15, 2.15)
+    ax.set_ylim(-1.18, 1.18)
+    ax.axis('off')
+    linked = sorted({r.linked_proportion for r in show.itertuples() if r.type == 'gene' and pd.notna(r.rho_with_linked_proportion)
+                     and abs(r.rho_with_linked_proportion) >= min_rho})
+    handles = [Line2D([], [], color=UP, lw=2.5), Line2D([], [], color=DOWN, lw=2.5), Line2D([], [], color='#6C5CE7', ls='--', lw=1.2),
+               Line2D([], [], marker='o', ls='', mfc='white', mec='#333333', ms=8), Line2D([], [], marker='s', ls='', mfc='#BBBBBB', mec='#333333', ms=8)]
+    labels = ['higher in tumour (direct edge)', 'lower in tumour (direct edge)', 'within-cohort co-variation, |ρ| ≥ 0.5',
+              'gene not tracking a cell-type shift', 'cell-type proportion']
+    for p in linked:
+        handles.append(Line2D([], [], marker='o', ls='', mfc=PROP_COLORS.get(p, '#BBBBBB'), mec='#333333', ms=8))
+        labels.append(f'gene tracking {p} fraction')
+    ax.legend(handles, labels, frameon=False, loc='upper center', bbox_to_anchor=(0.5, 0.0), ncol=3, fontsize=8.5, handlelength=2.2, columnspacing=1.2)
+    return show
+
+
+def fig_explain(R, out, comp='immune'):
+    fig = plt.figure(figsize=(215 * MM, 250 * MM))
+    gs = fig.add_gridspec(2, 2, height_ratios=[1, 1.15], width_ratios=[1.15, 1], hspace=.32, wspace=.75)
+    ax = fig.add_subplot(gs[0, 0])
+    shap_beeswarm(R, ax, comp)
+    panel(ax, 'a')
+    ax = fig.add_subplot(gs[0, 1])
+    shap_bars(R, ax, comp)
+    panel(ax, 'b')
+    ax = fig.add_subplot(gs[1, :])
+    kg_panel(R, ax, comp)
+    ax.text(-0.06, 1.0, 'c', transform=ax.transAxes, fontsize=14, fontweight='bold', va='bottom', ha='left')
+    save(fig, out / 'Figure5_shap_knowledge_graph')
+
+
+def fig_calibration(R, out, comp='immune'):
+    oof = R.oof(comp, 'loco')
+    p = oof[oof.model == 'logistic_regression']
+    fig, axes = plt.subplots(1, 2, figsize=(215 * MM, 90 * MM), gridspec_kw={'width_ratios': [1, 1.6], 'wspace': .3})
+    ax = axes[0]
+    bins = pd.qcut(p.score, 8, duplicates='drop')
+    g = p.groupby(bins, observed=True).agg(pred=('score', 'mean'), obs=('truth', 'mean'), n=('truth', 'size'))
+    z = 1.96
+    centre = (g.obs + z ** 2 / (2 * g.n)) / (1 + z ** 2 / g.n)
+    half = z * np.sqrt(g.obs * (1 - g.obs) / g.n + z ** 2 / (4 * g.n ** 2)) / (1 + z ** 2 / g.n)
+    ax.plot([0, 1], [0, 1], ls='--', color='grey', lw=.6)
+    ax.errorbar(g.pred, g.obs, yerr=[g.obs - (centre - half), centre + half - g.obs], fmt='o-', color='#2C3E50', ms=4, lw=1, capsize=2)
+    brier = float(((p.score - p.truth) ** 2).mean())
+    ax.text(0.04, 0.96, f'Brier score {brier:.3f}\n{len(p)} specimens, 8 quantile bins', transform=ax.transAxes, va='top', fontsize=8.5)
+    ax.set(xlabel='Mean predicted tumour probability', ylabel='Observed tumour fraction (95% CI)', xlim=(-.02, 1.02), ylim=(-.02, 1.02))
+    panel(ax, 'a')
+    ax = axes[1]
+    cohorts = sorted(p.cohort.unique())
+    rng = np.random.default_rng(1)
+    for i, c in enumerate(cohorts):
+        for j, (truth, name) in enumerate([(0, 'Normal'), (1, 'Tumor')]):
+            v = p[(p.cohort == c) & (p.truth == truth)].score.to_numpy()
+            x = i + (j - .5) * .36
+            ax.boxplot(v, positions=[x], widths=.28, showfliers=False, patch_artist=True,
+                       boxprops=dict(facecolor='none', edgecolor=TISSUE[name], lw=1), medianprops=dict(color=TISSUE[name], lw=1.4),
+                       whiskerprops=dict(color=TISSUE[name]), capprops=dict(color=TISSUE[name]))
+            ax.scatter(x + rng.uniform(-.08, .08, len(v)), v, s=7, color=TISSUE[name], lw=0, alpha=.8, zorder=3)
+    ax.axhline(.5, ls='--', color='grey', lw=.5)
+    ax.set_xticks(range(len(cohorts)), [f'{c} (n={p[p.cohort == c].donor.nunique()})' for c in cohorts], rotation=30, ha='right')
+    ax.set_xlim(-.6, len(cohorts) - .4)
+    ax.set_ylabel('Out-of-cohort tumour probability')
+    ax.legend([Line2D([], [], color=TISSUE['Normal'], lw=2), Line2D([], [], color=TISSUE['Tumor'], lw=2)], ['Adjacent normal', 'Tumour'],
+              frameon=False, loc='lower center', bbox_to_anchor=(.5, 1.0), ncol=2)
+    panel(ax, 'b')
+    save(fig, out / 'FigureS3_calibration_scores')
+
+
+def fig_kg_supplement(R, out, comp='immune'):
+    fig = plt.figure(figsize=(215 * MM, 200 * MM))
+    gs = fig.add_gridspec(2, 2, height_ratios=[1.35, 1], hspace=.45, wspace=.45)
+    ax = fig.add_subplot(gs[0, :])
+    kg_panel(R, ax, comp, layer='data')
+    ax.text(-0.06, 1.0, 'a', transform=ax.transAxes, fontsize=14, fontweight='bold', va='bottom', ha='left')
+    ax = fig.add_subplot(gs[1, 0])
+    summ = R.analysis(comp, 'shap_loco_summary.tsv')
+    w = summ.pivot(index='feature', columns='model', values='mean_abs_shap')
+    w = w[(w > 0).any(axis=1)] / w.max()
+    both = w[(w > 0).all(axis=1)]
+    rho = spearmanr(both.logistic_regression, both.extra_trees)[0]
+    ax.scatter(w.logistic_regression, w.extra_trees, s=10, color=np.where((w > 0).all(axis=1), '#2C3E50', '#BBBBBB'), lw=0)
+    lab = (w.logistic_regression + w.extra_trees).nlargest(4).index
+    for f, xy in zip(lab, [(-8, -4), (-14, 10), (-14, -12), (10, -14)]):
+        ax.annotate(feature_label(f), (w.loc[f, 'logistic_regression'], w.loc[f, 'extra_trees']), xytext=xy, textcoords='offset points',
+                    fontsize=8.5, ha='right' if xy[0] < 0 else 'left', va='center', fontstyle='normal' if f.startswith('prop::') else 'italic',
+                    arrowprops=dict(arrowstyle='-', lw=.4, color='#555555'))
+    ax.set(xlabel='Mean |SHAP|, logistic (scaled to max)', ylabel='Mean |SHAP|, extra trees (scaled to max)', xlim=(-.03, 1.08), ylim=(-.03, 1.08))
+    ax.set_title(f'Spearman ρ = {rho:.2f} over {len(both)} features used by both', fontsize=9.5)
+    panel(ax, 'b')
+    ax = fig.add_subplot(gs[1, 1])
+    nodes = R.analysis(comp, 'knowledge_graph_nodes.tsv')
+    g = nodes[(nodes.type == 'gene') & nodes.concordant_significant]
+    linked = g[g.rho_with_linked_proportion.abs() >= .5]
+    counts = linked.groupby(['linked_proportion', np.sign(linked.paired_dz)]).size().unstack(fill_value=0).reindex(columns=[1.0, -1.0], fill_value=0)
+    counts = counts.loc[counts.sum(axis=1).sort_values().index]
+    ax.barh(counts.index, counts[1.0], color=UP, label='higher in tumour')
+    ax.barh(counts.index, counts[-1.0], left=counts[1.0], color=DOWN, label='lower in tumour')
+    ax.set_yticks(range(len(counts)), [f'{c} fraction' for c in counts.index])
+    ax.set_xlabel('Concordant genes tracking the proportion\n(within-cohort |ρ| ≥ 0.5 of paired differences)')
+    ax.set_title(f'{len(linked)} of {len(g)} genes track a cell-type shift', fontsize=9.5)
+    ax.legend(frameon=False, loc='lower right', fontsize=8)
+    panel(ax, 'c')
+    save(fig, out / 'FigureS4_knowledge_graph_data_only')
+
+
+def table_evidence(R, comp='immune', n=15):
+    nodes = R.analysis(comp, 'knowledge_graph_nodes.tsv').set_index('feature')
+    meta = R.analysis(comp, 'paired_meta_analysis.tsv').set_index('feature')
+    summ = R.analysis(comp, 'shap_loco_summary.tsv')
+    rank = summ.pivot(index='feature', columns='model', values='rank')
+    folds = R.analysis(comp, 'selection_stability_loco.tsv').set_index('feature').folds_selected
+    n_folds = len(json.loads((R.ml_dir(comp, 'loco') / 'nested_selection.json').read_text()))
+    top = nodes[nodes.composite_integrated.notna()].nsmallest(n, 'rank_integrated').index
+    rows = []
+    for f in top:
+        r, m = nodes.loc[f], meta.loc[f]
+        effect = f'{m.log2_paired_difference:+.2f}' if f.startswith('gene::') else f'{100 * m.pooled_difference:+.1f} pp'
+        linked = f'{r.linked_proportion} (ρ = {r.rho_with_linked_proportion:+.2f})' if abs(r.rho_with_linked_proportion) >= .5 else '—'
+        rows.append({'Feature': feature_label(f), 'Pooled paired difference': effect, 'Paired d_z': f'{r.paired_dz:+.2f}', 'Meta FDR': f'{m.fdr:.1e}',
+                     'Cohorts concordant': f'{int(max(m.cohorts_up, m.cohorts_down))}/{int(m.cohorts)}', 'LOCO folds selected': f'{int(folds.get(f, 0))}/{n_folds}',
+                     'SHAP rank, logistic': int(rank.loc[f, 'logistic_regression']), 'SHAP rank, extra trees': int(rank.loc[f, 'extra_trees']),
+                     'KG rank, data-only': fmt_rank(r.rank_data), 'KG rank, integrated': fmt_rank(r.rank_integrated), 'Tracks cell-type shift': linked})
+    return pd.DataFrame(rows)
+
+
 def run(cfg):
     style()
     R = Results(cfg)
@@ -516,6 +750,9 @@ def run(cfg):
     fig_biology(R, figs)
     fig_supplement(R, figs)
     fig_subgroups(R, figs)
+    fig_explain(R, figs)
+    fig_calibration(R, figs)
+    fig_kg_supplement(R, figs)
     summary = numbers(R)
     (out / 'key_numbers.json').write_text(json.dumps(summary, indent=2, default=float))
     return tables, summary
@@ -562,5 +799,18 @@ def numbers(R):
         s[comp]['cohort_predictability'] = json.loads((R.root / 'analysis' / comp / 'cohort_predictability.json').read_text())
         s[comp]['training_only_panel'] = json.loads((R.root / 'analysis' / comp / 'fold_local_panel_summary.json').read_text())
         s[comp]['technical_control'] = json.loads((R.root / 'analysis' / comp / 'technical_control_loco.json').read_text())
+        a = R.root / 'analysis' / comp
+        s[comp]['shap_checks'] = json.loads((a / 'shap_loco_checks.json').read_text())
+        summ = R.analysis(comp, 'shap_loco_summary.tsv')
+        s[comp]['shap_top10'] = {m: summ[summ.model == m].nsmallest(10, 'rank').feature.tolist() for m in summ.model.unique()}
+        s[comp]['knowledge_graph'] = json.loads((a / 'knowledge_graph_summary.json').read_text())
+        kg = R.analysis(comp, 'knowledge_graph_nodes.tsv')
+        s[comp]['knowledge_graph']['top10'] = {layer: kg.nsmallest(10, f'rank_{layer}').feature.tolist() for layer in ('data', 'integrated')}
+        g = kg[(kg.type == 'gene') & kg.concordant_significant]
+        s[comp]['knowledge_graph']['concordant_genes'] = int(len(g))
+        s[comp]['knowledge_graph']['linked_by_proportion'] = g[g.rho_with_linked_proportion.abs() >= .5].linked_proportion.value_counts().to_dict()
+        oof = R.oof(comp, 'loco')
+        p = oof[oof.model == 'logistic_regression']
+        s[comp]['loco_brier_logistic'] = float(((p.score - p.truth) ** 2).mean())
         s[comp]['final_model_top_features'] = pd.read_csv(R.root / 'ml' / comp / 'final_model_coefficients.tsv', sep='\t').head(20).to_dict('records')
     return s
