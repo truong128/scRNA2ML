@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
+from openpyxl.styles import Font
 from scipy.stats import gaussian_kde, spearmanr
 from sklearn.metrics import confusion_matrix, roc_curve
 
@@ -21,6 +22,7 @@ PALETTE = ['#0072B2', '#E69F00', '#009E73', '#CC79A7', '#56B4E9', '#D55E00', '#F
 TISSUE = {'Normal': '#4C9F70', 'Tumor': '#C0392B'}
 SCHEME_LABEL = {'loco': 'Leave-one-cohort-out', 'loco_centered': 'LOCO, cohort-centred', 'pooled': 'Pooled donor CV'}
 MM = 1 / 25.4
+FONT = 'Times New Roman'
 # 'unsorted' covers unsorted digests and CD235a-depleted (erythrocyte-depleted) E-MTAB-13526 libraries.
 FRACTION_LABEL = {'unsorted': 'non-CD45-selected'}
 
@@ -30,7 +32,10 @@ def fraction_label(x):
 
 
 def style():
-    plt.rcParams.update({'font.family': 'serif', 'font.serif': ['Times New Roman'], 'mathtext.fontset': 'stix', 'font.size': 10,
+    plt.rcParams.update({'font.family': 'serif', 'font.serif': [FONT], 'mathtext.fontset': 'custom',
+                         'mathtext.rm': FONT, 'mathtext.it': f'{FONT}:italic', 'mathtext.bf': f'{FONT}:bold',
+                         'mathtext.sf': FONT, 'mathtext.tt': FONT, 'mathtext.cal': f'{FONT}:italic',
+                         'mathtext.fallback': None, 'font.size': 10,
                          'axes.titlesize': 10.5, 'axes.labelsize': 10, 'xtick.labelsize': 9, 'ytick.labelsize': 9, 'legend.fontsize': 8.5,
                          'legend.title_fontsize': 9, 'axes.spines.top': False, 'axes.spines.right': False, 'axes.linewidth': 0.7,
                          'pdf.fonttype': 42, 'ps.fonttype': 42, 'svg.fonttype': 'none', 'savefig.dpi': 300, 'figure.dpi': 150})
@@ -172,9 +177,13 @@ def write_tables(R, out):
         tables['S18_external_symbol_mapping'] = pd.read_csv(R.root / 'external' / 'symbol_mapping.tsv', sep='\t')
     for name, t in tables.items():
         t.to_csv(out / f'{name}.tsv', sep='\t', index=False)
-    with pd.ExcelWriter(out / 'tables.xlsx') as xl:
+    with pd.ExcelWriter(out / 'tables.xlsx', engine='openpyxl') as xl:
         for name, t in tables.items():
             t.to_excel(xl, sheet_name=name[:31], index=False)
+        for ws in xl.book.worksheets:
+            for row in ws.iter_rows():
+                for cell in row:
+                    cell.font = Font(name=FONT, bold=cell.font.bold, size=11)
     return tables
 
 
@@ -526,7 +535,7 @@ PROP_COLORS = {'T': '#2E86C1', 'NK': '#1ABC9C', 'B': '#F39C12', 'Plasma': '#D354
 
 
 def fmt_rank(v):
-    return '—' if v is None or pd.isna(v) else str(int(v))
+    return 'NA' if v is None or pd.isna(v) else str(int(v))
 
 
 def feature_label(f):
@@ -743,7 +752,7 @@ def table_evidence(R, comp='immune', n=15):
     for f in top:
         r, m = nodes.loc[f], meta.loc[f]
         effect = f'{m.log2_paired_difference:+.2f}' if f.startswith('gene::') else f'{100 * m.pooled_difference:+.1f} pp'
-        linked = f'{r.linked_proportion} (ρ = {r.rho_with_linked_proportion:+.2f})' if abs(r.rho_with_linked_proportion) >= .5 else '—'
+        linked = f'{r.linked_proportion} (ρ = {r.rho_with_linked_proportion:+.2f})' if abs(r.rho_with_linked_proportion) >= .5 else 'None'
         rows.append({'Feature': feature_label(f), 'Pooled paired difference': effect, 'Paired d_z': f'{r.paired_dz:+.2f}', 'Meta FDR': f'{m.fdr:.1e}',
                      'Cohorts concordant': f'{int(max(m.cohorts_up, m.cohorts_down))}/{int(m.cohorts)}', 'LOCO folds selected': f'{int(folds.get(f, 0))}/{n_folds}',
                      'SHAP rank, logistic': int(rank.loc[f, 'logistic_regression']), 'SHAP rank, extra trees': int(rank.loc[f, 'extra_trees']),

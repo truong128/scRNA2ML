@@ -1,6 +1,6 @@
 # scRNA2ML
 
-**From public single-cell RNA-seq archives to cross-cohort validated, donor-level machine-learning classifiers — in one command.**
+**From public single-cell RNA-seq archives to cross-cohort validated, donor-level machine-learning classifiers, in one command.**
 
 `scRNA2ML` downloads raw count matrices from GEO / ArrayExpress, harmonises heterogeneous deposits into one library manifest, runs an identical Seurat quality-control and annotation workflow on every library, aggregates cells into donor-level pseudobulk profiles and evaluates 36 classifier families under nested, leakage-safe validation schemes, including leave-one-cohort-out. It finishes by writing publication-ready tables and figures.
 
@@ -65,7 +65,7 @@ download ─► prepare ─► seurat ─► features ─► ml ─► analysis 
 
 Requirements: Linux or macOS, Python ≥ 3.10, R ≥ 4.3 with Seurat ≥ 5 (the bundled results used Seurat 6.0.0), `curl`.
 
-**Conda (recommended — installs Python and R dependencies together)**
+**Conda (recommended; installs Python and R dependencies together)**
 
 ```bash
 git clone https://github.com/truong128/scRNA2ML.git
@@ -120,7 +120,7 @@ scrna2ml run --config config/nsclc.yaml --stages report          # regenerate ta
 
 | Option | Default | Description |
 |---|---|---|
-| `--config` | — | Study YAML (relative paths resolve against the repository root). |
+| `--config` | required | Study YAML (relative paths resolve against the repository root). |
 | `--stages` | all | Subset of `download,prepare,seurat,features,ml,analysis,external,report`. |
 | `--download-workers` | 8 | Concurrent downloads (per-host limits still apply). |
 
@@ -189,8 +189,8 @@ external:                     # optional; cohorts never used for development
 
 **Analysis compartments**
 
-- `immune` — pseudobulk of cells annotated as T, NK, B, plasma, myeloid, dendritic or mast cells, plus immune cell-type proportions. Per donor, CD45⁺-sorted libraries are preferred, otherwise non-CD45-selected libraries (unsorted or erythrocyte-depleted only; `enrichment: unsorted` in the manifest); tumour and normal must come from the same fraction.
-- `whole` — pseudobulk of all QC-passing cells from non-CD45-selected libraries only, plus all cell-type proportions.
+- `immune`: pseudobulk of cells annotated as T, NK, B, plasma, myeloid, dendritic or mast cells, plus immune cell-type proportions. Per donor, CD45⁺-sorted libraries are preferred, otherwise non-CD45-selected libraries (unsorted or erythrocyte-depleted only; `enrichment: unsorted` in the manifest); tumour and normal must come from the same fraction.
+- `whole`: pseudobulk of all QC-passing cells from non-CD45-selected libraries only, plus all cell-type proportions.
 
 ## Validation design
 
@@ -211,7 +211,7 @@ and tuned by `GridSearchCV` on balanced accuracy over the inner folds. **Nested 
 
 **Model registry (36 candidates + a prior-only baseline).** Linear (logistic L2/L1/elastic net, ridge, SGD, perceptron, passive-aggressive, LDA, linear SVM), kernel and instance-based (RBF/polynomial SVM, Gaussian process, *k*-NN, nearest centroid), probabilistic (Gaussian/Bernoulli naive Bayes, QDA), tree ensembles (decision tree, random forest, extra trees, bagging, AdaBoost, gradient boosting, histogram gradient boosting, XGBoost, LightGBM, CatBoost), voting ensembles, and neural networks (scikit-learn MLP, FT-Transformer, tabular ResNet, RealMLP-style MLP; trained for a fixed number of epochs without an internal random validation split).
 
-**Reported metrics.** Balanced accuracy, AUROC (pooled out-of-fold and mean per fold), sensitivity, specificity, Matthews correlation, macro-F1, Brier score and *paired concordance* — the fraction of donors whose tumour specimen receives a higher tumour score than their own normal specimen. 95% CIs come from resampling donors (both specimens together).
+**Reported metrics.** Balanced accuracy, AUROC (pooled out-of-fold and mean per fold), sensitivity, specificity, Matthews correlation, macro-F1, Brier score and *paired concordance*, the fraction of donors whose tumour specimen receives a higher tumour score than their own normal specimen. 95% CIs come from resampling donors (both specimens together).
 
 **Permutation test.** Tumour/normal labels are swapped at random within donors, and the complete nested procedure for the primary model is rerun for each permutation; *P* = (1 + #null ≥ observed) / (1 + *n*).
 
