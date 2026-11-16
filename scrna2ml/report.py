@@ -447,7 +447,7 @@ def fig_biology(R, out, comp='immune'):
     for i, f in enumerate(c.feature):
         ax.text(1.01, i, f'{stab.get(f, 0):.0%}', va='center', fontsize=8, transform=ax.get_yaxis_transform())
     ax.axvline(0, color='k', lw=.5)
-    ax.set_xlabel('Standardized coefficient (final model)')
+    ax.set_xlabel('Standardised coefficient (final model)')
     ax.set_title('Right: % of LOCO folds selecting feature', fontsize=9)
     panel(ax, 'c')
     ax = fig.add_subplot(gs[1, 1])
@@ -641,9 +641,9 @@ def kg_panel(R, ax, comp, layer='integrated', min_rho=0.5):
     linked = sorted({r.linked_proportion for r in show.itertuples() if r.type == 'gene' and pd.notna(r.rho_with_linked_proportion)
                      and abs(r.rho_with_linked_proportion) >= min_rho})
     handles = [Line2D([], [], color=UP, lw=2.5), Line2D([], [], color=DOWN, lw=2.5), Line2D([], [], color='#6C5CE7', ls='--', lw=1.2),
-               Line2D([], [], marker='o', ls='', mfc='white', mec='#333333', ms=8), Line2D([], [], marker='s', ls='', mfc='#BBBBBB', mec='#333333', ms=8)]
+               Line2D([], [], marker='o', ls='', mfc='white', mec='#333333', ms=8), Line2D([], [], marker='s', ls='', mfc='white', mec='#333333', ms=8)]
     labels = ['higher in tumour (direct edge)', 'lower in tumour (direct edge)', 'within-cohort co-variation, |ρ| ≥ 0.5',
-              'gene not tracking a cell-type shift', 'cell-type proportion']
+              'gene not tracking a cell-type shift', 'cell-type proportion (fill = its cell type)']
     for p in linked:
         handles.append(Line2D([], [], marker='o', ls='', mfc=PROP_COLORS.get(p, '#BBBBBB'), mec='#333333', ms=8))
         labels.append(f'gene tracking {p} fraction')
